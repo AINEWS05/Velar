@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { reportEvent, sendEvent, flushQueue } from '../src/reporter'
 import { readQueue } from '../src/queue'
-import type { VelarWireEvent } from '@velar/shared'
+import type { VelarWireEvent } from '@velar-dev/shared'
 
 let tmpDir: string
 

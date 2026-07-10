@@ -1,5 +1,5 @@
 {
-  "name": "@velar/rules",
+  "name": "@velar-dev/rules",
   "version": "0.1.0",
   "description": "Local rule catalog for Velar — 30 pre-execution risk detection rules across 6 categories, classification only, no content inspection.",
   "license": "MIT",
@@ -39,7 +39,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@velar/shared": "workspace:*"
+    "@velar-dev/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20",

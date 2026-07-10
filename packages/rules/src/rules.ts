@@ -1,4 +1,4 @@
-import type { NormalizedOperation, RiskLevel } from '@velar/shared'
+import type { NormalizedOperation, RiskLevel } from '@velar-dev/shared'
 
 export type RuleCategory =
   | 'secrets'

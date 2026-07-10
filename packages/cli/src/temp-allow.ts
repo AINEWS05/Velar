@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { TempAllowGrant } from '@velar/shared'
+import type { TempAllowGrant } from '@velar-dev/shared'
 
 function tempAllowsPath(velarDir: string): string {
   return path.join(velarDir, 'temp-allows.json')

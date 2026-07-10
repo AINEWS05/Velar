@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { appendToQueue, readQueue, removeFromQueue, QUEUE_MAX } from '../src/queue'
-import type { VelarWireEvent } from '@velar/shared'
+import type { VelarWireEvent } from '@velar-dev/shared'
 
 let tmpDir: string
 

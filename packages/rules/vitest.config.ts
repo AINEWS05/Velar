@@ -9,7 +9,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@velar/shared': path.resolve(__dirname, '../shared/src/index.ts'),
+      '@velar-dev/shared': path.resolve(__dirname, '../shared/src/index.ts'),
     },
   },
 })

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { evaluate, RULES } from '../src/index'
 import type { Rule } from '../src/index'
-import type { NormalizedOperation } from '@velar/shared'
+import type { NormalizedOperation } from '@velar-dev/shared'
 
 describe('RULES catalog — Phase 3 shape', () => {
   it('has exactly 30 detection rules across 6 categories, plus 2 non-counted infrastructure entries', () => {

@@ -1,4 +1,4 @@
-import type { NormalizedOperation, OperationType } from '@velar/shared'
+import type { NormalizedOperation, OperationType } from '@velar-dev/shared'
 
 const FILE_READ_TOOLS = new Set(['read', 'glob', 'grep', 'notebookread'])
 const FILE_WRITE_TOOLS = new Set(['write', 'edit', 'multiedit', 'notebookedit'])

@@ -1,4 +1,4 @@
-import type { NormalizedOperation, RuleMatch } from '@velar/shared'
+import type { NormalizedOperation, RuleMatch } from '@velar-dev/shared'
 import { RULES, type Rule, type RuleCategory } from './rules'
 
 export type { Rule, RuleCategory } from './rules'

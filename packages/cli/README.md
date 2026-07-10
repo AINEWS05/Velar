@@ -1,4 +1,4 @@
-# @velar/cli
+# @velar-dev/cli
 
 Pre-execution approval for AI coding agents. Velar blocks dangerous operations before they run — and sees nothing else.
 
@@ -12,13 +12,13 @@ Get a first blocked-operation demo running in about 60 seconds.
 
 ```bash
 # 1. Install (no global install needed)
-npx @velar/cli init
+npx @velar-dev/cli init
 
 # 2. Log in with the Ingest Token from your Velar dashboard
-npx @velar/cli login --token vlr_xxxxxxxx --org-id org_xxxxxxxx
+npx @velar-dev/cli login --token vlr_xxxxxxxx --org-id org_xxxxxxxx
 
 # 3. Run Claude Code through Velar
-npx @velar/cli run claude
+npx @velar-dev/cli run claude
 ```
 
 `init` writes a `PreToolUse` hook into `.claude/settings.json` for the current project. From then on, every file write, bash command, and git operation Claude Code attempts is classified before it runs. Try asking it to read `.env` or run `rm -rf ~` — Velar blocks it, no dashboard required for local-only mode.
@@ -33,12 +33,12 @@ npx @velar/cli run claude
 | Decision (`allowed` / `blocked` / `approved`) | Command arguments or flags |
 | Project/agent name, approval method, latency | Environment variables or secret values |
 
-Velar's local rule engine (`@velar/rules`) matches on operation type, file basename, and command text — entirely in-process. Only the classification result above is ever reported to the dashboard or posted to Slack. This contract is enforced by an explicit Zod `.strict()` schema at the wire boundary and is covered by the [zero-knowledge-contract test suite](./tests/zero-knowledge-contract.test.ts) — any field outside the allow-list is rejected, not silently dropped.
+Velar's local rule engine (`@velar-dev/rules`) matches on operation type, file basename, and command text — entirely in-process. Only the classification result above is ever reported to the dashboard or posted to Slack. This contract is enforced by an explicit Zod `.strict()` schema at the wire boundary and is covered by the [zero-knowledge-contract test suite](./tests/zero-knowledge-contract.test.ts) — any field outside the allow-list is rejected, not silently dropped.
 
 ## How it works
 
 1. **Hook registration** — `velar init` adds a `PreToolUse` entry to `.claude/settings.json`, so Claude Code pipes every tool call through `velar hook pre-tool-use` before executing it.
-2. **Local classification** — the hook normalizes the tool call (path, command, or git operation) and evaluates it against `@velar/rules`' 30-rule catalog. This step is synchronous, in-process, and completes in well under 50ms.
+2. **Local classification** — the hook normalizes the tool call (path, command, or git operation) and evaluates it against `@velar-dev/rules`' 30-rule catalog. This step is synchronous, in-process, and completes in well under 50ms.
 3. **Decision**:
    - `allow` → the operation proceeds immediately, silently.
    - `warn` → the operation proceeds, but is logged for visibility.
@@ -113,8 +113,8 @@ Every rule matches on operation type, file basename/path, or command text only �
 
 ```bash
 pnpm install
-pnpm --filter @velar/cli build
-pnpm --filter @velar/cli test
+pnpm --filter @velar-dev/cli build
+pnpm --filter @velar-dev/cli test
 ```
 
 ## License

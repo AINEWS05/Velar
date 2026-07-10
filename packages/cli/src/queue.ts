@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { VelarWireEvent } from '@velar/shared'
+import type { VelarWireEvent } from '@velar-dev/shared'
 
 /**
  * Offline queue for events that couldn't reach apps/api. The local

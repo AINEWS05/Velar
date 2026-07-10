@@ -1,8 +1,8 @@
-# @velar/shared
+# @velar-dev/shared
 
-Shared TypeScript types and Zod schemas used by [`@velar/cli`](https://www.npmjs.com/package/@velar/cli) and [`@velar/rules`](https://www.npmjs.com/package/@velar/rules) — normalized operation types, risk levels, and the wire-level event/approval schemas that enforce Velar's zero-knowledge contract (an explicit allow-list; any other field is rejected, not silently dropped).
+Shared TypeScript types and Zod schemas used by [`@velar-dev/cli`](https://www.npmjs.com/package/@velar-dev/cli) and [`@velar-dev/rules`](https://www.npmjs.com/package/@velar-dev/rules) — normalized operation types, risk levels, and the wire-level event/approval schemas that enforce Velar's zero-knowledge contract (an explicit allow-list; any other field is rejected, not silently dropped).
 
-This package is an internal dependency of `@velar/cli` and `@velar/rules` and isn't meant to be installed directly — see [`@velar/cli`'s README](https://www.npmjs.com/package/@velar/cli) for what Velar is and how it works.
+This package is an internal dependency of `@velar-dev/cli` and `@velar-dev/rules` and isn't meant to be installed directly — see [`@velar-dev/cli`'s README](https://www.npmjs.com/package/@velar-dev/cli) for what Velar is and how it works.
 
 ## License
 

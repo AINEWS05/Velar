@@ -1,4 +1,4 @@
-import type { VelarWireEvent } from '@velar/shared'
+import type { VelarWireEvent } from '@velar-dev/shared'
 import { appendToQueue, readQueue, removeFromQueue } from './queue'
 
 export interface ReporterConfig {

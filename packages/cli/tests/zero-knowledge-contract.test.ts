@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { hookPreToolUseCommand } from '../src/commands/hook-pre-tool-use'
-import { WIRE_EVENT_ALLOWED_KEYS } from '@velar/shared'
+import { WIRE_EVENT_ALLOWED_KEYS } from '@velar-dev/shared'
 import type { Prompter } from '../src/approval'
 
 let tmpDir: string

@@ -1,4 +1,4 @@
-import type { ApprovalCreateRequest, ApprovalCreateResponse, ApprovalStatusResponse, TempAllowGrant } from '@velar/shared'
+import type { ApprovalCreateRequest, ApprovalCreateResponse, ApprovalStatusResponse, TempAllowGrant } from '@velar-dev/shared'
 import type { FetchFn, ReporterConfig } from './reporter'
 
 export type CloudApprovalStatus = 'approved' | 'blocked' | 'timed_out' | 'unavailable'

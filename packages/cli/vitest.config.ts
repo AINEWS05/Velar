@@ -10,8 +10,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@velar/shared': path.resolve(__dirname, '../shared/src/index.ts'),
-      '@velar/rules': path.resolve(__dirname, '../rules/src/index.ts'),
+      '@velar-dev/shared': path.resolve(__dirname, '../shared/src/index.ts'),
+      '@velar-dev/rules': path.resolve(__dirname, '../rules/src/index.ts'),
     },
   },
 })

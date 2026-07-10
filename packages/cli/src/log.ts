@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { buildVelarEvent } from '@velar/shared'
-import type { ApprovalMethod, Decision, NormalizedOperation, RiskLevel } from '@velar/shared'
+import { buildVelarEvent } from '@velar-dev/shared'
+import type { ApprovalMethod, Decision, NormalizedOperation, RiskLevel } from '@velar-dev/shared'
 
 /**
  * Appends one event to .velar/events.jsonl. This is the ONLY place the CLI

@@ -1,6 +1,6 @@
 import path from 'node:path'
-import { evaluate, RULES } from '@velar/rules'
-import type { ApprovalMethod, Decision } from '@velar/shared'
+import { evaluate, RULES } from '@velar-dev/rules'
+import type { ApprovalMethod, Decision } from '@velar-dev/shared'
 import { classifyPayload } from '../classify'
 import { appendVelarEvent } from '../log'
 import { createTtyPrompter, decideFromAnswer, type Prompter } from '../approval'

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { evaluate } from '../src/index'
-import type { NormalizedOperation } from '@velar/shared'
+import type { NormalizedOperation } from '@velar-dev/shared'
 
 describe('evaluate — env file rules', () => {
   it('classifies reading .env.production as critical', () => {

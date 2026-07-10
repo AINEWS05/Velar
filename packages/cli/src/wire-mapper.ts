@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto'
 import os from 'node:os'
-import { WIRE_SCHEMA_VERSION } from '@velar/shared'
-import type { ApprovalMethod, Decision, NormalizedOperation, RiskLevel, VelarWireEvent } from '@velar/shared'
+import { WIRE_SCHEMA_VERSION } from '@velar-dev/shared'
+import type { ApprovalMethod, Decision, NormalizedOperation, RiskLevel, VelarWireEvent } from '@velar-dev/shared'
 
 /** Kept in sync with package.json's version by hand for this Phase 2 skeleton. */
 export const CLI_VERSION = '0.1.0'

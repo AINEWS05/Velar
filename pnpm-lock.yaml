@@ -10,10 +10,10 @@ importers:
 
   packages/cli:
     dependencies:
-      '@velar/rules':
+      '@velar-dev/rules':
         specifier: workspace:*
         version: link:../rules
-      '@velar/shared':
+      '@velar-dev/shared':
         specifier: workspace:*
         version: link:../shared
     devDependencies:
@@ -29,7 +29,7 @@ importers:
 
   packages/rules:
     dependencies:
-      '@velar/shared':
+      '@velar-dev/shared':
         specifier: workspace:*
         version: link:../shared
     devDependencies:

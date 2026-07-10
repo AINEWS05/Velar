@@ -1,5 +1,5 @@
 {
-  "name": "@velar/shared",
+  "name": "@velar-dev/shared",
   "version": "0.1.0",
   "description": "Shared event schema and types for Velar — zero-knowledge pre-execution approval for AI coding agents.",
   "license": "MIT",

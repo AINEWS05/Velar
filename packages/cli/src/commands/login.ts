@@ -1,6 +1,6 @@
 import path from 'node:path'
 import readline from 'node:readline'
-import { looksLikeIngestToken } from '@velar/shared'
+import { looksLikeIngestToken } from '@velar-dev/shared'
 import { saveConfig, defaultConfigDir } from '../config'
 
 export interface LoginOptions {
