@@ -1,0 +1,59 @@
+{
+  "name": "@velar/cli",
+  "version": "0.1.0",
+  "description": "Pre-execution approval for AI coding agents (Claude Code, Codex, Cursor) — blocks dangerous operations before they run. Sees nothing else.",
+  "license": "MIT",
+  "author": "Velar",
+  "homepage": "https://github.com/AINEWS05/Velar#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AINEWS05/Velar.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/AINEWS05/Velar/issues"
+  },
+  "keywords": [
+    "velar",
+    "ai-agent",
+    "claude-code",
+    "codex",
+    "cursor",
+    "cli",
+    "safety",
+    "security",
+    "guardrails",
+    "pre-tool-use",
+    "hook"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "velar": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --build",
+    "build": "tsc --build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@velar/rules": "workspace:*",
+    "@velar/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

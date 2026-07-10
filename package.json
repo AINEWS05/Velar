@@ -1,0 +1,13 @@
+{
+  "name": "velar",
+  "private": true,
+  "description": "Workspace root for @velar/cli, @velar/rules, and @velar/shared.",
+  "scripts": {
+    "typecheck": "pnpm -r run typecheck",
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "name": "@velar/shared",
+  "version": "0.1.0",
+  "description": "Shared event schema and types for Velar — zero-knowledge pre-execution approval for AI coding agents.",
+  "license": "MIT",
+  "author": "Velar",
+  "homepage": "https://github.com/AINEWS05/Velar#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AINEWS05/Velar.git",
+    "directory": "packages/shared"
+  },
+  "bugs": {
+    "url": "https://github.com/AINEWS05/Velar/issues"
+  },
+  "keywords": [
+    "velar",
+    "ai-agent",
+    "claude-code",
+    "safety",
+    "types"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

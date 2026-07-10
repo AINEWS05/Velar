@@ -1,0 +1,52 @@
+{
+  "name": "@velar/rules",
+  "version": "0.1.0",
+  "description": "Local rule catalog for Velar — 30 pre-execution risk detection rules across 6 categories, classification only, no content inspection.",
+  "license": "MIT",
+  "author": "Velar",
+  "homepage": "https://github.com/AINEWS05/Velar#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AINEWS05/Velar.git",
+    "directory": "packages/rules"
+  },
+  "bugs": {
+    "url": "https://github.com/AINEWS05/Velar/issues"
+  },
+  "keywords": [
+    "velar",
+    "ai-agent",
+    "claude-code",
+    "codex",
+    "cursor",
+    "safety",
+    "security",
+    "guardrails"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --build",
+    "build": "tsc --build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@velar/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
