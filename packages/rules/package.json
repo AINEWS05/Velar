@@ -1,6 +1,6 @@
 {
   "name": "@velar-dev/rules",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local rule catalog for Velar — 30 pre-execution risk detection rules across 6 categories, classification only, no content inspection.",
   "license": "MIT",
   "author": "Velar",

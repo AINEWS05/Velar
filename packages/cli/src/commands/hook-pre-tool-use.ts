@@ -86,6 +86,11 @@ export async function hookPreToolUseCommand(options: HookOptions = {}): Promise<
     approverId?: string | null
     approvalLatencyMs?: number | null
   }): Promise<void> {
+    // `velar init`/`velar doctor` spawn the real, resolved hook command to
+    // prove it actually runs (see ../hook-selftest.ts) — this must never
+    // write to the real local event log or report to the dashboard.
+    if (process.env.VELAR_HOOK_SELF_TEST === '1') return
+
     appendVelarEvent(velarDir, {
       projectName,
       agentName,

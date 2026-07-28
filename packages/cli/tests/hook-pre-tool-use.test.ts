@@ -219,6 +219,42 @@ describe('hookPreToolUseCommand — malformed / unexpected payloads never crash'
   }
 })
 
+describe('hookPreToolUseCommand — VELAR_HOOK_SELF_TEST=1 (used by `velar init`/`velar doctor`)', () => {
+  const originalFlag = process.env.VELAR_HOOK_SELF_TEST
+
+  afterEach(() => {
+    if (originalFlag === undefined) delete process.env.VELAR_HOOK_SELF_TEST
+    else process.env.VELAR_HOOK_SELF_TEST = originalFlag
+  })
+
+  it('still returns the correct decision but writes nothing to the local event log', async () => {
+    process.env.VELAR_HOOK_SELF_TEST = '1'
+    const code = await hookPreToolUseCommand({
+      input: stdinFrom(envExampleReadPayload),
+      prompter: neverAskPrompter,
+      cwd: tmpDir,
+      config: null,
+    })
+    expect(code).toBe(0)
+    expect(fs.existsSync(path.join(tmpDir, '.velar', 'events.jsonl'))).toBe(false)
+  })
+
+  it('never reports to the dashboard even when a config/token is present', async () => {
+    process.env.VELAR_HOOK_SELF_TEST = '1'
+    const fetchImpl = async (): Promise<Response> => {
+      throw new Error('fetch should never be called during a self-test')
+    }
+    const code = await hookPreToolUseCommand({
+      input: stdinFrom(envExampleReadPayload),
+      prompter: neverAskPrompter,
+      cwd: tmpDir,
+      config: { token: 'vlr_test', orgId: 'org_test' },
+      fetchImpl,
+    })
+    expect(code).toBe(0)
+  })
+})
+
 describe('hookPreToolUseCommand — 100 safe operations produce zero approval prompts', () => {
   it('never calls the prompter across 100 varied safe operations', async () => {
     const payloads = Array.from({ length: 100 }, (_, i) => {

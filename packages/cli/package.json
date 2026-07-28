@@ -1,6 +1,6 @@
 {
   "name": "@velar-dev/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pre-execution approval for AI coding agents (Claude Code, Codex, Cursor) — blocks dangerous operations before they run. Sees nothing else.",
   "license": "MIT",
   "author": "Velar",

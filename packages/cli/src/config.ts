@@ -45,7 +45,7 @@ export function loadConfig(dir: string = defaultConfigDir()): VelarConfig | null
   }
 }
 
-const DEFAULT_API_BASE_URL = 'http://localhost:4000'
+const DEFAULT_API_BASE_URL = 'https://usevelar.com'
 
 export function resolveApiBaseUrl(config: VelarConfig | null): string {
   return process.env.VELAR_API_URL ?? config?.apiBaseUrl ?? DEFAULT_API_BASE_URL

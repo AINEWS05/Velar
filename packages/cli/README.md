@@ -109,6 +109,21 @@ Every rule matches on operation type, file basename/path, or command text only �
 | `package-json-write` | warn | package.json | This may change dependencies or scripts. |
 | `lockfile-write` | warn | package-lock.json \| pnpm-lock.yaml \| yarn.lock | This may change resolved dependency versions. |
 
+## Self-hosting
+
+By default, `velar login` and `velar run claude` talk to `https://usevelar.com`. To point the CLI at a self-hosted or local instance of the Velar dashboard/API instead, override the base URL — no rebuild needed:
+
+```bash
+# Per-invocation, via flag (saved into ~/.velar/config.json on login)
+velar login --token vlr_xxxxxxxx --org-id org_xxxxxxxx --api-url http://localhost:4000
+
+# Or via environment variable — takes priority over both the saved config
+# value and the https://usevelar.com default, useful for CI or one-off runs
+VELAR_API_URL=http://localhost:4000 velar run claude
+```
+
+Resolution order (highest priority first): `VELAR_API_URL` env var → `apiBaseUrl` saved in `~/.velar/config.json` (via `--api-url` at login) → `https://usevelar.com`.
+
 ## Development
 
 ```bash

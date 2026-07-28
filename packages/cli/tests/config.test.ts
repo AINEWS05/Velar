@@ -58,6 +58,6 @@ describe('resolveApiBaseUrl', () => {
   })
 
   it('falls back to the built-in default when neither is set', () => {
-    expect(resolveApiBaseUrl(null)).toBe('http://localhost:4000')
+    expect(resolveApiBaseUrl(null)).toBe('https://usevelar.com')
   })
 })

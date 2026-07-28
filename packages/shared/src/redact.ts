@@ -5,10 +5,16 @@ import type { Decision, NormalizedOperation, RiskLevel, ApprovalMethod, VelarEve
  * Strips a path down to its basename. This is the ONLY thing derived from a
  * file path that is safe to log — never the full path (which can reveal
  * directory structure, usernames, project layout, etc.).
+ *
+ * Normalizes backslashes to forward slashes first and always splits with
+ * `path.posix`, so a Windows-style path (e.g. reported by a Claude Code
+ * session running on Windows) is stripped correctly even when Velar itself
+ * runs on Linux/macOS — `path.basename` alone only understands `\` as a
+ * separator on win32.
  */
 export function toSafeBasename(p?: string): string | undefined {
   if (!p) return undefined
-  return path.basename(p)
+  return path.posix.basename(p.replace(/\\/g, '/'))
 }
 
 /**
