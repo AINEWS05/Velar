@@ -1,7 +1,7 @@
 {
   "name": "@velar-dev/shared",
-  "version": "0.2.0",
-  "description": "Shared event schema and types for Velar — zero-knowledge pre-execution approval for AI coding agents.",
+  "version": "0.3.0",
+  "description": "Shared event schema and types for Velar — pre-execution approval for AI coding agents, built on a no-raw-data-sent design.",
   "license": "MIT",
   "author": "Velar",
   "homepage": "https://github.com/AINEWS05/Velar#readme",
@@ -26,6 +26,7 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "main": "dist/index.js",

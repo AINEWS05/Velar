@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { reportEvent, sendEvent, flushQueue } from '../src/reporter'
 import { readQueue } from '../src/queue'
-import type { VelarWireEvent } from '@velar-dev/shared'
+import type { ActionEnvelope } from '@velar-dev/shared'
 
 let tmpDir: string
 
@@ -16,23 +16,33 @@ afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true })
 })
 
-function fakeEvent(eventId: string): VelarWireEvent {
+function fakeEvent(actionId: string): ActionEnvelope {
   return {
-    schemaVersion: 1,
-    eventId,
-    timestamp: new Date().toISOString(),
-    orgId: 'org_1',
-    userIdHash: 'hash',
-    projectName: 'p',
-    agentName: 'claude-code',
-    operationType: 'file_read',
-    ruleId: 'r',
+    envelopeVersion: 1,
+    actionId,
+    tenantId: 'org_1',
+    projectPseudonym: 'pseudo',
+    actor: 'hash',
+    agent: 'claude-code',
+    agentVersion: null,
+    actionType: 'file_read',
+    targetClass: 'generic',
+    environment: 'unknown',
+    canonicalizedParameterDigest: null,
+    riskFactors: [],
     riskLevel: 'allow',
+    matchedRuleIds: ['r'],
+    policyVersion: '0.2.0',
+    requestedAt: new Date().toISOString(),
+    expiry: null,
+    nonce: 'n',
     decision: 'allowed',
-    approverId: null,
-    approvalMethod: 'none',
-    approvalLatencyMs: null,
-    cliVersion: '0.1.0',
+    decisionSource: 'local_rule_engine',
+    approver: null,
+    resultStatus: 'decided',
+    durationMs: 5,
+    errorClass: null,
+    cliVersion: '0.2.0',
   }
 }
 
@@ -65,7 +75,7 @@ describe('sendEvent', () => {
 describe('reportEvent — queue-first, never throws', () => {
   it('queues the event even when there is no config (not logged in)', async () => {
     await reportEvent(tmpDir, null, fakeEvent('e1'))
-    expect(readQueue(tmpDir).map((e) => e.eventId)).toEqual(['e1'])
+    expect(readQueue(tmpDir).map((e) => e.actionId)).toEqual(['e1'])
   })
 
   it('queues then immediately removes the event on a successful send', async () => {
@@ -77,7 +87,7 @@ describe('reportEvent — queue-first, never throws', () => {
   it('leaves the event queued when the send fails — decision is unaffected either way', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error('offline'))
     await expect(reportEvent(tmpDir, CONFIG, fakeEvent('e1'), fetchImpl as unknown as typeof fetch)).resolves.toBeUndefined()
-    expect(readQueue(tmpDir).map((e) => e.eventId)).toEqual(['e1'])
+    expect(readQueue(tmpDir).map((e) => e.actionId)).toEqual(['e1'])
   })
 })
 
@@ -104,6 +114,6 @@ describe('flushQueue', () => {
 
     const result = await flushQueue(tmpDir, CONFIG, fetchImpl as unknown as typeof fetch)
     expect(result).toEqual({ sent: 1, remaining: 2 })
-    expect(readQueue(tmpDir).map((e) => e.eventId)).toEqual(['e2', 'e3'])
+    expect(readQueue(tmpDir).map((e) => e.actionId)).toEqual(['e2', 'e3'])
   })
 })

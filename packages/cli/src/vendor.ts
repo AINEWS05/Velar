@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { createRequire } from 'node:module'
 
 export interface VendorResult {
@@ -10,6 +11,15 @@ export interface VendorResult {
   vendorRoot: string
   /** false when an up-to-date vendored copy already existed and nothing was copied. */
   copied: boolean
+  /** sha256 of entryPath's current contents — recorded in the install receipt and
+   *  re-checked before doctor/test ever executes this file (see hook-selftest.ts). */
+  entryFingerprint: string
+}
+
+/** sha256 of a file's contents, hex-encoded. Used to detect a vendored entry
+ *  point being tampered with or corrupted between install and execution. */
+export function fingerprintFile(filePath: string): string {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex')
 }
 
 export function defaultVendorBaseDir(): string {
@@ -97,7 +107,7 @@ export function vendorCli(options: { vendorBaseDir?: string; cliRoot?: string } 
   const entryPath = path.join(vendorRoot, 'node_modules', '@velar-dev', 'cli', 'dist', 'index.js')
 
   if (fs.existsSync(markerPath) && fs.existsSync(entryPath)) {
-    return { entryPath, vendorRoot, copied: false }
+    return { entryPath, vendorRoot, copied: false, entryFingerprint: fingerprintFile(entryPath) }
   }
 
   // Start clean in case a previous vendoring attempt was interrupted partway through.
@@ -127,18 +137,41 @@ export function vendorCli(options: { vendorBaseDir?: string; cliRoot?: string } 
   }
 
   fs.writeFileSync(markerPath, new Date().toISOString())
-  return { entryPath, vendorRoot, copied: true }
+  return { entryPath, vendorRoot, copied: true, entryFingerprint: fingerprintFile(entryPath) }
 }
 
 function shellQuote(value: string): string {
   return `"${value.replace(/"/g, '\\"')}"`
 }
 
+export interface HookInvocation {
+  /** The exact node executable path, unquoted — for direct spawnSync(executable, args, {shell:false}). */
+  executable: string
+  /** Args, unquoted — for direct spawnSync(executable, args, {shell:false}). */
+  args: string[]
+  /**
+   * The shell-quoted command string Claude Code invokes from settings.local.json.
+   * Claude Code's own PreToolUse contract is a single shell command string —
+   * this is the only place that string form is needed. Everything WE spawn
+   * ourselves (doctor, `velar test`) uses `executable`/`args` directly with
+   * shell:false instead of re-parsing this string through a shell.
+   */
+  command: string
+}
+
 /**
- * Builds the exact command Claude Code should invoke for the PreToolUse
+ * Builds the exact invocation an agent CLI should use for its PreToolUse
  * hook: the current Node executable running the vendored entry point
  * directly, by absolute path. No PATH lookup, no npx, no shell alias.
+ *
+ * `hookSubcommand` defaults to `pre-tool-use` (Claude Code). Codex's adapter
+ * passes `codex-pre-tool-use` — a distinct entry point since the two
+ * platforms' hook payload shapes and enforcement semantics differ (see
+ * commands/hook-codex-pre-tool-use.ts).
  */
-export function buildHookCommand(entryPath: string): string {
-  return `${shellQuote(process.execPath)} ${shellQuote(entryPath)} hook pre-tool-use`
+export function buildHookInvocation(entryPath: string, hookSubcommand: string = 'pre-tool-use'): HookInvocation {
+  const executable = process.execPath
+  const args = [entryPath, 'hook', hookSubcommand]
+  const command = `${shellQuote(executable)} ${shellQuote(entryPath)} hook ${hookSubcommand}`
+  return { executable, args, command }
 }

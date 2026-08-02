@@ -42,9 +42,9 @@ The full table with every rule's pattern and reason is documented in [`@velar-de
 
 `evaluate()` scans the catalog top-to-bottom and returns the **first** matching rule — this is deliberate, not an implementation detail. See the doc comment at the top of [`src/rules.ts`](./src/rules.ts) before reordering or inserting rules; [`tests/rules-phase3.test.ts`](./tests/rules-phase3.test.ts) enforces this ordering with regression guards.
 
-## Zero-knowledge contract
+## No-raw-data-sent contract
 
-The 50ms local-judgement budget and the "metadata only, never content" contract are both covered by tests: [`tests/rules.test.ts`](./tests/rules.test.ts) and [`tests/rules-phase3.test.ts`](./tests/rules-phase3.test.ts) (includes the performance benchmark). The end-to-end wire-level enforcement of this contract (rejecting any field outside the allow-list) lives in `@velar-dev/cli`'s [zero-knowledge-contract test suite](https://www.npmjs.com/package/@velar-dev/cli).
+The 50ms local-judgement budget and the "metadata only, never content" contract are both covered by tests: [`tests/rules.test.ts`](./tests/rules.test.ts) and [`tests/rules-phase3.test.ts`](./tests/rules-phase3.test.ts) (includes the performance benchmark). The end-to-end wire-level enforcement of this contract (rejecting any field outside the allow-list) lives in `@velar-dev/cli`'s zero-knowledge-contract test suite (the real, internal name of that specific test file — see the [package page](https://www.npmjs.com/package/@velar-dev/cli)).
 
 ## Development
 

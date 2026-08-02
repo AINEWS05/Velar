@@ -2,7 +2,7 @@
 
 Pre-execution approval for AI coding agents. Velar blocks dangerous operations before they run — and sees nothing else.
 
-This repo is a small pnpm workspace with two published packages:
+This repo is a small pnpm workspace with three published packages:
 
 - **[`packages/cli`](./packages/cli)** — the `velar` CLI. Start here: [what Velar is, quick start, what it sends vs. never sends, the full rule table](./packages/cli/README.md).
 - **[`packages/rules`](./packages/rules)** — the local rule catalog (`@velar-dev/rules`) that `@velar-dev/cli` depends on.

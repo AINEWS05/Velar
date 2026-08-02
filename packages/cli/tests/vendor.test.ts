@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { vendorCli, buildHookCommand, defaultVendorBaseDir } from '../src/vendor'
+import { vendorCli, buildHookInvocation, defaultVendorBaseDir, fingerprintFile } from '../src/vendor'
+import crypto from 'node:crypto'
 
 let tmpDir: string
 let cliRoot: string
@@ -126,18 +127,39 @@ describe('vendorCli', () => {
   it('defaults vendorBaseDir to ~/.velar/vendor', () => {
     expect(defaultVendorBaseDir()).toBe(path.join(os.homedir(), '.velar', 'vendor'))
   })
-})
 
-describe('buildHookCommand', () => {
-  it('quotes the node executable and script path and appends the hook subcommand', () => {
-    const command = buildHookCommand('C:\\Program Files\\velar\\index.js')
-    expect(command).toContain('hook pre-tool-use')
-    expect(command).toContain('"C:\\Program Files\\velar\\index.js"')
-    expect(command.startsWith('"')).toBe(true)
+  it('returns entryFingerprint matching a fresh sha256 of the entry file', () => {
+    const result = vendorCli({ vendorBaseDir, cliRoot })
+    expect(result.entryFingerprint).toBe(fingerprintFile(result.entryPath))
+    expect(result.entryFingerprint).toBe(
+      crypto.createHash('sha256').update('// fake cli entry\n').digest('hex'),
+    )
   })
 
-  it('escapes embedded double quotes in the entry path', () => {
-    const command = buildHookCommand('/tmp/weird"path/index.js')
-    expect(command).toContain('\\"path')
+  it('returns the same entryFingerprint on the idempotent (not-recopied) path', () => {
+    const first = vendorCli({ vendorBaseDir, cliRoot })
+    const second = vendorCli({ vendorBaseDir, cliRoot })
+    expect(second.copied).toBe(false)
+    expect(second.entryFingerprint).toBe(first.entryFingerprint)
+  })
+})
+
+describe('buildHookInvocation', () => {
+  it('quotes the node executable and script path and appends the hook subcommand', () => {
+    const invocation = buildHookInvocation('C:\\Program Files\\velar\\index.js')
+    expect(invocation.command).toContain('hook pre-tool-use')
+    expect(invocation.command).toContain('"C:\\Program Files\\velar\\index.js"')
+    expect(invocation.command.startsWith('"')).toBe(true)
+  })
+
+  it('escapes embedded double quotes in the entry path in the shell command form', () => {
+    const invocation = buildHookInvocation('/tmp/weird"path/index.js')
+    expect(invocation.command).toContain('\\"path')
+  })
+
+  it('exposes unquoted executable/args for direct shell:false spawning', () => {
+    const invocation = buildHookInvocation('/tmp/weird"path/index.js')
+    expect(invocation.executable).toBe(process.execPath)
+    expect(invocation.args).toEqual(['/tmp/weird"path/index.js', 'hook', 'pre-tool-use'])
   })
 })

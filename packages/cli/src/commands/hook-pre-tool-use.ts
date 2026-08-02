@@ -4,11 +4,12 @@ import type { ApprovalMethod, Decision } from '@velar-dev/shared'
 import { classifyPayload } from '../classify'
 import { appendVelarEvent } from '../log'
 import { createTtyPrompter, decideFromAnswer, type Prompter } from '../approval'
-import { loadConfig, resolveApiBaseUrl, type VelarConfig } from '../config'
+import { loadConfig, resolveApiBaseUrl, resolveUnclassifiedToolRisk, type VelarConfig } from '../config'
 import { isTempAllowed, addTempAllow, pruneExpiredTempAllows } from '../temp-allow'
 import { requestSlackApproval } from '../approval-client'
 import { reportEvent, type FetchFn } from '../reporter'
-import { buildWireEvent } from '../wire-mapper'
+import { buildActionEnvelope } from '../wire-mapper'
+import { recordLifecycleMilestone } from '../lifecycle'
 
 export interface HookOptions {
   /** Defaults to process.stdin — override in tests. */
@@ -52,6 +53,7 @@ function readAllStdin(stream: NodeJS.ReadableStream): Promise<string> {
  * always finalized before any network call is attempted.
  */
 export async function hookPreToolUseCommand(options: HookOptions = {}): Promise<number> {
+  const hookStartedAt = Date.now()
   const warn = options.warn ?? ((msg: string) => process.stderr.write(msg))
   const fetchImpl = options.fetchImpl ?? fetch
 
@@ -74,6 +76,7 @@ export async function hookPreToolUseCommand(options: HookOptions = {}): Promise<
   const projectName = path.basename(projectCwd) || 'unknown-project'
   const agentName = 'claude-code'
   const velarDir = path.join(projectCwd, '.velar')
+  const isSelfTest = process.env.VELAR_HOOK_SELF_TEST === '1'
 
   const config = options.config !== undefined ? options.config : loadConfig()
   const reporterConfig = config ? { apiBaseUrl: resolveApiBaseUrl(config), token: config.token } : null
@@ -85,11 +88,13 @@ export async function hookPreToolUseCommand(options: HookOptions = {}): Promise<
     riskLevel: 'allow' | 'warn' | 'critical'
     approverId?: string | null
     approvalLatencyMs?: number | null
+    expiryMs?: number | null
   }): Promise<void> {
-    // `velar init`/`velar doctor` spawn the real, resolved hook command to
-    // prove it actually runs (see ../hook-selftest.ts) — this must never
-    // write to the real local event log or report to the dashboard.
-    if (process.env.VELAR_HOOK_SELF_TEST === '1') return
+    // `velar init`/`velar doctor`/`velar test` spawn the real, resolved
+    // hook command to prove it actually runs (see ../hook-selftest.ts) —
+    // this must never write to the real local event log or report to the
+    // dashboard.
+    if (isSelfTest) return
 
     appendVelarEvent(velarDir, {
       projectName,
@@ -100,9 +105,30 @@ export async function hookPreToolUseCommand(options: HookOptions = {}): Promise<
       decision: params.decision,
       approvalMethod: params.approvalMethod,
     })
+
+    // Lifecycle milestones (first_real_decision / first_real_critical_block)
+    // — a SEPARATE stream from the per-operation Action Envelope below, and
+    // only ever fires once per project (see lifecycle.ts). Never derived
+    // from a self-test run (already excluded above) — these specifically
+    // mean "a real operation was really decided/blocked".
+    await recordLifecycleMilestone(
+      velarDir,
+      'first_real_decision',
+      { tenantId: config?.orgId, projectName },
+      { reporterConfig: reporterConfig ?? undefined, fetchImpl },
+    )
+    if (params.riskLevel === 'critical' && params.decision === 'blocked') {
+      await recordLifecycleMilestone(
+        velarDir,
+        'first_real_critical_block',
+        { tenantId: config?.orgId, projectName },
+        { reporterConfig: reporterConfig ?? undefined, fetchImpl },
+      )
+    }
+
     if (config && reporterConfig) {
-      const wireEvent = buildWireEvent({
-        orgId: config.orgId,
+      const envelope = buildActionEnvelope({
+        tenantId: config.orgId,
         projectName,
         agentName,
         operation,
@@ -111,13 +137,33 @@ export async function hookPreToolUseCommand(options: HookOptions = {}): Promise<
         decision: params.decision,
         approvalMethod: params.approvalMethod,
         approverId: params.approverId,
-        approvalLatencyMs: params.approvalLatencyMs,
+        requestedAt: hookStartedAt,
+        expiryMs: params.expiryMs,
+        durationMs: Date.now() - hookStartedAt,
+        resultStatus: 'decided',
       })
-      await reportEvent(velarDir, reporterConfig, wireEvent, fetchImpl, warn)
+      await reportEvent(velarDir, reporterConfig, envelope, fetchImpl, warn)
     }
   }
 
-  const { ruleId, riskLevel } = evaluate(operation)
+  const { ruleId, riskLevel: matchedRiskLevel } = evaluate(operation)
+  let riskLevel = matchedRiskLevel
+
+  // packages/rules stays pure/config-agnostic (no I/O, no org policy) — the
+  // one place Velar's unclassified-tool severity is actually configurable is
+  // here, applied as a post-evaluate() override, never inside the rule
+  // engine itself. Both mcp-unknown-tool-default and unclassified-tool-default
+  // always evaluate to 'warn' on their own; this can only ever escalate to
+  // 'critical', never relax any other rule's outcome. One config knob
+  // (unclassifiedToolRisk) covers both ruleIds — an org that wants every
+  // unrecognized tool call (MCP or otherwise) to require approval sets it
+  // once, rather than needing a separate knob for the next unknown-tool rule.
+  if (
+    (ruleId === 'mcp-unknown-tool-default' || ruleId === 'unclassified-tool-default') &&
+    resolveUnclassifiedToolRisk(config) === 'critical'
+  ) {
+    riskLevel = 'critical'
+  }
 
   if (riskLevel === 'allow') {
     await finalize({ decision: 'allowed', approvalMethod: 'none', ruleId, riskLevel })
@@ -131,6 +177,13 @@ export async function hookPreToolUseCommand(options: HookOptions = {}): Promise<
   }
 
   // riskLevel === 'critical'
+  if (isSelfTest) {
+    // `velar test` proves the block decision + exit code contract for a
+    // critical-risk operation without exercising the real approval UX (no
+    // real terminal wait, no real Slack call/timeout) — finalize() above
+    // already no-ops for local-log/dashboard reporting under this flag.
+    return 2
+  }
   pruneExpiredTempAllows(velarDir)
   if (isTempAllowed(velarDir, ruleId, projectName)) {
     await finalize({ decision: 'temp_allowed', approvalMethod: 'slack', ruleId, riskLevel })
@@ -139,6 +192,7 @@ export async function hookPreToolUseCommand(options: HookOptions = {}): Promise<
 
   const ruleDescription = RULES.find((r) => r.id === ruleId)?.reason ?? ruleId
   const approvalStartedAt = Date.now()
+  const APPROVAL_TIMEOUT_MS = 120_000
 
   // Try the Slack/cloud approval path first when Velar is configured.
   if (config && reporterConfig) {
@@ -158,6 +212,7 @@ export async function hookPreToolUseCommand(options: HookOptions = {}): Promise<
 
     if (outcome.status !== 'unavailable') {
       const approvalLatencyMs = Date.now() - approvalStartedAt
+      const expiryMs = approvalStartedAt + APPROVAL_TIMEOUT_MS
 
       if (outcome.status === 'approved') {
         if (outcome.tempAllow) addTempAllow(velarDir, outcome.tempAllow)
@@ -169,6 +224,7 @@ export async function hookPreToolUseCommand(options: HookOptions = {}): Promise<
           riskLevel,
           approverId: outcome.approverId,
           approvalLatencyMs,
+          expiryMs,
         })
         return 0
       }
@@ -182,6 +238,7 @@ export async function hookPreToolUseCommand(options: HookOptions = {}): Promise<
           riskLevel,
           approverId: outcome.approverId,
           approvalLatencyMs,
+          expiryMs,
         })
         return 2
       }
@@ -194,6 +251,7 @@ export async function hookPreToolUseCommand(options: HookOptions = {}): Promise<
         ruleId,
         riskLevel,
         approvalLatencyMs,
+        expiryMs,
       })
       return 2
     }

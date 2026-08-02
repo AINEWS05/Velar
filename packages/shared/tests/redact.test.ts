@@ -61,11 +61,13 @@ describe('buildVelarEvent', () => {
       'approvalMethod',
       'decision',
       'fileBasename',
+      'isSubagent',
       'matchedRuleId',
       'operationType',
       'projectName',
       'riskLevel',
       'timestamp',
+      'unclassifiedToolName',
     ])
   })
 })

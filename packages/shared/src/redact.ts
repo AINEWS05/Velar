@@ -39,6 +39,8 @@ export function buildVelarEvent(params: {
     agentName: params.agentName,
     operationType: params.operation.operationType,
     fileBasename: toSafeBasename(params.operation.path),
+    unclassifiedToolName: params.operation.operationType === 'unclassified' ? params.operation.originalToolName : undefined,
+    isSubagent: params.operation.isSubagent,
     matchedRuleId: params.matchedRuleId,
     riskLevel: params.riskLevel,
     decision: params.decision,

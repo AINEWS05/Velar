@@ -4,7 +4,21 @@ Pre-execution approval for AI coding agents. Velar blocks dangerous operations b
 
 ## What is Velar
 
-Velar sits between an AI coding agent (Claude Code, Codex, Cursor) and your machine as a `PreToolUse` hook. It classifies every file/bash/git operation locally, blocks or asks for Slack approval on anything dangerous, and stays silently out of the way for everything else. It never reads your prompts, your file contents, or your API keys.
+Velar sits between an AI coding agent and your machine as a `PreToolUse` hook. It classifies every file/bash/git operation locally, blocks or asks for Slack approval on anything dangerous, and stays silently out of the way for everything else. It never reads your prompts, your file contents, or your API keys.
+
+**Fully supported today: Claude Code**, via its `PreToolUse` hook — every operation type is genuinely blocked. **Codex CLI is Preview support**: file writes are genuinely blocked, but Codex does not currently let a hook stop a Bash command from running (detected and logged, not prevented) — see [Codex CLI support](#codex-cli-support-preview) below. Cursor is planned, not yet available.
+
+The table below is generated from the Adapter Capability Manifest (`@velar-dev/shared`'s `CAPABILITY_MANIFEST`) — it is the single source of truth for support claims across the README, the marketing site, and package descriptions, so it never drifts into overclaiming an adapter that isn't actually wired up yet.
+
+<!-- SUPPORT-TABLE:START (generated from packages/shared/src/capability-manifest.ts — do not hand-edit; run `pnpm --filter @velar-dev/cli run gen:support-table`) -->
+
+| ツール | ステータス | ファイル読み取り | ファイル書き込み | bashコマンド | git操作 | デプロイ |
+| --- | --- | --- | --- | --- | --- | --- |
+| Claude Code | ✅ 対応済み | 🛑 ブロック可 | 🛑 ブロック可 | 🛑 ブロック可 | 🛑 ブロック可 | 🛑 ブロック可 |
+| OpenAI Codex | Preview | — | 🛑 ブロック可 | 👁 検知のみ | — | — |
+| Cursor | 計画中（未対応） | — | — | — | — | — |
+
+<!-- SUPPORT-TABLE:END -->
 
 ## Quick Start
 
@@ -21,7 +35,33 @@ npx @velar-dev/cli login --token vlr_xxxxxxxx --org-id org_xxxxxxxx
 npx @velar-dev/cli run claude
 ```
 
-`init` writes a `PreToolUse` hook into `.claude/settings.json` for the current project. From then on, every file write, bash command, and git operation Claude Code attempts is classified before it runs. Try asking it to read `.env` or run `rm -rf ~` — Velar blocks it, no dashboard required for local-only mode.
+`init` writes a `PreToolUse` hook into `.claude/settings.local.json` for the current project (never the shared, git-committed `settings.json` — see [Hook registration](#how-it-works) below for why). From then on, every file write, bash command, and git operation Claude Code attempts is classified before it runs. Try asking it to read `.env` or run `rm -rf ~` — Velar blocks it, no dashboard required for local-only mode.
+
+Verify it's actually working, and that it actually blocks:
+
+```bash
+velar doctor   # is the hook registered, and does it run?
+velar test     # does it allow safe ops AND block a real critical-risk one?
+```
+
+## Codex CLI support (Preview)
+
+```bash
+npx @velar-dev/cli codex-init
+```
+
+Writes the hook into `.codex/hooks.json` for the current project. Two things to know before relying on this:
+
+- **File writes are genuinely blocked.** Codex actually enforces a hook's deny decision for `apply_patch` (its file-write tool) — a dangerous write (e.g. to a real `.env` file) does not happen.
+- **Bash commands are detected, not blocked.** Codex runs a shell command regardless of what the hook returns — confirmed by direct testing against a real Codex CLI install, not assumed from documentation (see [`docs/design/codex-hook-verification.md`](./docs/design/codex-hook-verification.md) for the full methodology). Velar still logs and reports these as critical when they match a rule, so they show up in your audit log — it just can't stop them from running today.
+- **Codex requires you to trust the hook once** before it runs at all: start a real Codex session in this project (Codex will prompt to review the new hook) or pass `--dangerously-bypass-hook-trust` yourself if you already vet hook sources that way. `codex-init` cannot grant that trust on your behalf.
+- Only `codex exec`/the Bash and `apply_patch` tools were tested; the interactive `codex` TUI session's default approval flow was not (see the verification doc).
+
+To remove everything `init` added:
+
+```bash
+velar uninstall
+```
 
 ## What Velar sends vs. NEVER sends
 
@@ -37,7 +77,7 @@ Velar's local rule engine (`@velar-dev/rules`) matches on operation type, file b
 
 ## How it works
 
-1. **Hook registration** — `velar init` adds a `PreToolUse` entry to `.claude/settings.json`, so Claude Code pipes every tool call through `velar hook pre-tool-use` before executing it.
+1. **Hook registration** — `velar init` adds a `PreToolUse` entry to `.claude/settings.local.json`, so Claude Code pipes every tool call through the hook before executing it. This goes into `settings.local.json`, not the shared `settings.json` your team commits: the hook command embeds an absolute path into a per-machine vendored copy of the CLI (`~/.velar/vendor/<version>/...`), which would silently point at a nonexistent path on a teammate's machine if committed. `velar init` writes an install receipt (`.velar/install-receipt.json`, including a sha256 fingerprint of that vendored copy) so `velar doctor`/`velar test` never re-execute an unverified path — see their descriptions below.
 2. **Local classification** — the hook normalizes the tool call (path, command, or git operation) and evaluates it against `@velar-dev/rules`' 30-rule catalog. This step is synchronous, in-process, and completes in well under 50ms.
 3. **Decision**:
    - `allow` → the operation proceeds immediately, silently.
@@ -108,6 +148,16 @@ Every rule matches on operation type, file basename/path, or command text only �
 | `npm-install-global-or-unpinned` | warn | npm install -g \| yarn global add \| pnpm add -g | A global package install — worth a glance for supply-chain risk. |
 | `package-json-write` | warn | package.json | This may change dependencies or scripts. |
 | `lockfile-write` | warn | package-lock.json \| pnpm-lock.yaml \| yarn.lock | This may change resolved dependency versions. |
+
+## Beyond the 30: MCP, WebFetch/WebSearch, and Velar's own self-protection
+
+Three more rules run on every install, not counted in the 30 above (see [`src/rules.ts`](./src/rules.ts)'s "not counted in the 30" blocks):
+
+- **`unclassified-tool-default`** (warn) — any tool call classify.ts can't confidently place into a known shape (file_read/file_write/bash/git/deploy/mcp_tool_call) is classified `unclassified` and always at least warned on, never silently allowed. This is what closes the gap a hand-added rule per tool would always leave open for the *next* new tool Claude Code ships — including MCP tool calls (5 dedicated `mcp-*` rules handle known-dangerous patterns first, falling through to this same warn-by-default) and WebFetch/WebSearch.
+- **`web-target-secret-like`** (critical) — WebFetch/WebSearch are not blocked for ordinary web browsing (that's a core, legitimate use case). The one channel actually treated as dangerous is a secret-shaped value embedded in the destination URL or search query itself (e.g. `https://attacker.example.com/?leak=sk-...`).
+- **`velar-self-protection`** (critical) — writes to Velar's own hook registration (`.claude/settings.json`/`settings.local.json`), the project-local `.velar/` directory (event log, install receipt, temp-allows), or the global `~/.velar/` directory (login token, vendored code) always require approval. Nothing that's being monitored should be able to silently disable its own monitor. This asks for approval (critical), it does not hard-deny — you can still legitimately edit your own settings.
+
+An org that wants every unrecognized tool call (MCP or otherwise) to require approval rather than just warn can set `unclassifiedToolRisk: "critical"` at `velar login`/`velar init` time.
 
 ## Self-hosting
 

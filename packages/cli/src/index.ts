@@ -1,17 +1,25 @@
 #!/usr/bin/env node
 import { initCommand } from './commands/init'
 import { doctorCommand } from './commands/doctor'
+import { testCommand } from './commands/test'
+import { uninstallCommand } from './commands/uninstall'
 import { hookPreToolUseCommand } from './commands/hook-pre-tool-use'
+import { hookCodexPreToolUseCommand } from './commands/hook-codex-pre-tool-use'
+import { codexInitCommand } from './commands/codex-init'
 import { runClaudeCommand } from './commands/run-claude'
 import { loginCommand } from './commands/login'
 
 const USAGE = [
   'Usage:',
-  '  velar login              Save a Velar Ingest Token to ~/.velar/config.json',
-  '  velar init               Install the Velar PreToolUse hook in .claude/settings.json',
-  '  velar doctor             Verify the installed hook is correctly configured and executable',
-  '  velar run claude [...]   Launch Claude Code with Velar enabled',
-  '  velar hook pre-tool-use  (internal) Invoked by Claude Code as a PreToolUse hook',
+  '  velar login                    Save a Velar Ingest Token to ~/.velar/config.json',
+  '  velar init                     Install the Velar PreToolUse hook in .claude/settings.local.json',
+  '  velar doctor                   Verify the installed hook is correctly configured and executable',
+  '  velar test                     Prove the hook actually allows safe ops and blocks dangerous ones',
+  '  velar uninstall                Remove everything `velar init` added to this project',
+  '  velar run claude [...]         Launch Claude Code with Velar enabled',
+  '  velar codex-init               Install the Velar PreToolUse hook in .codex/hooks.json (Preview — see docs)',
+  '  velar hook pre-tool-use        (internal) Invoked by Claude Code as a PreToolUse hook',
+  '  velar hook codex-pre-tool-use  (internal) Invoked by Codex CLI as a PreToolUse hook',
 ].join('\n')
 
 export async function main(argv: string[]): Promise<number> {
@@ -26,11 +34,23 @@ export async function main(argv: string[]): Promise<number> {
   if (cmd === 'doctor') {
     return doctorCommand()
   }
+  if (cmd === 'test') {
+    return testCommand()
+  }
+  if (cmd === 'uninstall') {
+    return uninstallCommand()
+  }
+  if (cmd === 'codex-init') {
+    return codexInitCommand()
+  }
   if (cmd === 'run' && sub === 'claude') {
     return runClaudeCommand(rest)
   }
   if (cmd === 'hook' && sub === 'pre-tool-use') {
     return hookPreToolUseCommand()
+  }
+  if (cmd === 'hook' && sub === 'codex-pre-tool-use') {
+    return hookCodexPreToolUseCommand()
   }
 
   console.error(USAGE)
@@ -38,7 +58,7 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 function isHookInvocation(argv: string[]): boolean {
-  return argv[0] === 'hook' && argv[1] === 'pre-tool-use'
+  return argv[0] === 'hook' && (argv[1] === 'pre-tool-use' || argv[1] === 'codex-pre-tool-use')
 }
 
 export interface CrashOutcome {

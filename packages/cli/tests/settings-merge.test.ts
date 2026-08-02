@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { runInit, VELAR_HOOK_COMMAND } from '../src/settings-merge'
+import { readInstallReceipt } from '../src/install-receipt'
 
 let tmpDir: string
 let vendorBaseDir: string
@@ -31,6 +32,10 @@ afterEach(() => {
 })
 
 function settingsPath() {
+  return path.join(tmpDir, '.claude', 'settings.local.json')
+}
+
+function legacySettingsPath() {
   return path.join(tmpDir, '.claude', 'settings.json')
 }
 
@@ -38,8 +43,8 @@ function init(dir: string = tmpDir) {
   return runInit(dir, { vendorBaseDir, vendorCliRoot })
 }
 
-describe('runInit — creating settings.json', () => {
-  it('creates .claude/settings.json with an absolute, vendored Velar hook command when none existed', () => {
+describe('runInit — creating settings.local.json', () => {
+  it('creates .claude/settings.local.json with an absolute, vendored Velar hook command when none existed', () => {
     const result = init()
     expect(result.created).toBe(true)
     expect(result.alreadyInstalled).toBe(false)
@@ -58,6 +63,11 @@ describe('runInit — creating settings.json', () => {
     expect(fs.existsSync(result.vendorEntryPath)).toBe(true)
   })
 
+  it('never writes to the shared .claude/settings.json (machine-specific path must not be committed)', () => {
+    init()
+    expect(fs.existsSync(legacySettingsPath())).toBe(false)
+  })
+
   it('creates the .velar directory', () => {
     const result = init()
     expect(fs.existsSync(result.velarDir)).toBe(true)
@@ -67,9 +77,22 @@ describe('runInit — creating settings.json', () => {
     const result = init()
     expect(result.backupPath).toBeUndefined()
   })
+
+  it('writes an install receipt matching the written hook command', () => {
+    const result = init()
+    expect(fs.existsSync(result.receiptPath)).toBe(true)
+
+    const receipt = readInstallReceipt(result.velarDir)
+    expect(receipt).not.toBeNull()
+    expect(receipt!.hookCommand).toBe(result.hookCommand)
+    expect(receipt!.vendorEntryPath).toBe(result.vendorEntryPath)
+    expect(receipt!.settingsPath).toBe(result.settingsPath)
+    expect(receipt!.vendorEntryFingerprint).toMatch(/^[0-9a-f]{64}$/)
+    expect(receipt!.hookArgs).toContain(result.vendorEntryPath)
+  })
 })
 
-describe('runInit — merging with existing settings', () => {
+describe('runInit — merging with existing settings.local.json', () => {
   it('preserves unrelated top-level keys and existing hook types', () => {
     fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true })
     const existing = {
@@ -96,18 +119,18 @@ describe('runInit — merging with existing settings', () => {
     expect(written.hooks.PreToolUse[1].hooks[0].command).toBe(result.hookCommand)
   })
 
-  it('creates a timestamped backup of the pre-existing settings.json', () => {
+  it('creates a timestamped backup of the pre-existing settings.local.json', () => {
     fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true })
     const originalContent = JSON.stringify({ model: 'opus' }, null, 2)
     fs.writeFileSync(settingsPath(), originalContent)
 
     const result = init()
     expect(result.backupPath).toBeDefined()
-    expect(path.basename(result.backupPath!)).toMatch(/^settings\.json\.velar-backup-.+$/)
+    expect(path.basename(result.backupPath!)).toMatch(/^settings\.local\.json\.velar-backup-.+$/)
     expect(fs.readFileSync(result.backupPath!, 'utf8')).toBe(originalContent)
   })
 
-  it('refuses to touch a settings.json that is not valid JSON', () => {
+  it('refuses to touch a settings.local.json that is not valid JSON', () => {
     fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true })
     fs.writeFileSync(settingsPath(), '{ this is not valid json')
 
@@ -156,7 +179,7 @@ describe('runInit — idempotency', () => {
   })
 })
 
-describe('runInit — upgrading a stale Velar hook entry', () => {
+describe('runInit — upgrading a stale Velar hook entry in settings.local.json', () => {
   it('rewrites a pre-0.2.0 bare "velar hook pre-tool-use" command in place, without duplicating', () => {
     fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true })
     fs.writeFileSync(
@@ -221,5 +244,92 @@ describe('runInit — upgrading a stale Velar hook entry', () => {
     expect(written.hooks.PreToolUse[0].hooks).toHaveLength(2)
     expect(written.hooks.PreToolUse[0].hooks[0].command).toBe('unrelated-sibling-hook')
     expect(written.hooks.PreToolUse[0].hooks[1].command).toBe(result.hookCommand)
+  })
+})
+
+describe('runInit — migrating an entry out of the legacy shared settings.json', () => {
+  it('removes the Velar entry from settings.json and installs into settings.local.json instead', () => {
+    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true })
+    fs.writeFileSync(
+      legacySettingsPath(),
+      JSON.stringify({
+        model: 'opus',
+        hooks: { PreToolUse: [{ matcher: '.*', hooks: [{ type: 'command', command: VELAR_HOOK_COMMAND }] }] },
+      }),
+    )
+
+    const result = init()
+    expect(result.migratedFromSharedSettings).toBe(true)
+    expect(result.upgraded).toBe(true)
+
+    const legacy = JSON.parse(fs.readFileSync(legacySettingsPath(), 'utf8'))
+    expect(legacy.model).toBe('opus') // unrelated content preserved
+    expect(legacy.hooks?.PreToolUse ?? []).toHaveLength(0)
+
+    const local = JSON.parse(fs.readFileSync(settingsPath(), 'utf8'))
+    expect(local.hooks.PreToolUse).toHaveLength(1)
+    expect(local.hooks.PreToolUse[0].hooks[0].command).toBe(result.hookCommand)
+  })
+
+  it('backs up the legacy settings.json before modifying it', () => {
+    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true })
+    const originalContent = JSON.stringify({
+      hooks: { PreToolUse: [{ matcher: '.*', hooks: [{ type: 'command', command: VELAR_HOOK_COMMAND }] }] },
+    })
+    fs.writeFileSync(legacySettingsPath(), originalContent)
+
+    init()
+    const claudeFiles = fs.readdirSync(path.join(tmpDir, '.claude'))
+    const legacyBackup = claudeFiles.find((f) => f.startsWith('settings.json.velar-backup-'))
+    expect(legacyBackup).toBeDefined()
+    expect(fs.readFileSync(path.join(tmpDir, '.claude', legacyBackup!), 'utf8')).toBe(originalContent)
+  })
+
+  it('preserves other PreToolUse hooks left behind in the legacy settings.json', () => {
+    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true })
+    fs.writeFileSync(
+      legacySettingsPath(),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            { matcher: 'Bash', hooks: [{ type: 'command', command: 'unrelated-tool' }] },
+            { matcher: '.*', hooks: [{ type: 'command', command: VELAR_HOOK_COMMAND }] },
+          ],
+        },
+      }),
+    )
+
+    init()
+    const legacy = JSON.parse(fs.readFileSync(legacySettingsPath(), 'utf8'))
+    expect(legacy.hooks.PreToolUse).toHaveLength(1)
+    expect(legacy.hooks.PreToolUse[0].hooks[0].command).toBe('unrelated-tool')
+  })
+
+  it('is idempotent: a second run does not re-migrate or duplicate', () => {
+    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true })
+    fs.writeFileSync(
+      legacySettingsPath(),
+      JSON.stringify({
+        hooks: { PreToolUse: [{ matcher: '.*', hooks: [{ type: 'command', command: VELAR_HOOK_COMMAND }] }] },
+      }),
+    )
+
+    init()
+    const second = init()
+    expect(second.migratedFromSharedSettings).toBe(false)
+    expect(second.alreadyInstalled).toBe(true)
+
+    const local = JSON.parse(fs.readFileSync(settingsPath(), 'utf8'))
+    expect(local.hooks.PreToolUse).toHaveLength(1)
+  })
+
+  it('does not treat a legacy settings.json with no Velar entry as something to migrate', () => {
+    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true })
+    fs.writeFileSync(legacySettingsPath(), JSON.stringify({ model: 'opus' }))
+
+    const result = init()
+    expect(result.migratedFromSharedSettings).toBe(false)
+    const legacy = JSON.parse(fs.readFileSync(legacySettingsPath(), 'utf8'))
+    expect(legacy).toEqual({ model: 'opus' })
   })
 })

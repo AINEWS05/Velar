@@ -16,7 +16,7 @@ export type RiskLevel = 'allow' | 'warn' | 'critical'
 export type Decision = 'allowed' | 'warned' | 'blocked' | 'approved' | 'temp_allowed'
 
 /** Coarse classification of the tool call being evaluated. */
-export type OperationType = 'file_read' | 'file_write' | 'bash' | 'git' | 'deploy'
+export type OperationType = 'file_read' | 'file_write' | 'bash' | 'git' | 'deploy' | 'mcp_tool_call' | 'unclassified'
 
 /**
  * How a `critical` decision was resolved. Phase 1 only ever produces
@@ -37,6 +37,47 @@ export interface NormalizedOperation {
   path?: string
   /** Full command string when applicable (bash/git/deploy). Not logged. */
   command?: string
+  /**
+   * Raw `tool_name` when applicable (mcp_tool_call), e.g.
+   * `mcp__github__delete_repository`. In-memory rule-matching only, exactly
+   * like `command`/`path` above — never persisted to VelarEvent. Deliberately
+   * NOT split into server/tool identifiers here; that split (and whether it's
+   * ever safe to report off the local machine) is a separate, still-open
+   * design question — see docs/design/mcp-classification.md.
+   */
+  mcpToolName?: string
+  /**
+   * A bounded (~8KB), in-memory-only JSON.stringify of the MCP tool's raw
+   * `tool_input`, used exclusively so existing secret/production-DB pattern
+   * rules can also match against MCP tool arguments (an MCP tool name alone
+   * can't tell you if its arguments contain a connection string or an API
+   * key). Same treatment as `command`/`path`: read for pattern matching only,
+   * never persisted, never sent anywhere.
+   */
+  mcpToolInputText?: string
+  /**
+   * Raw `tool_name` when classify.ts could not confidently classify the
+   * operation into any known shape (operationType `'unclassified'`) — e.g. a
+   * built-in tool like WebFetch/WebSearch that has no dedicated branch yet.
+   * Unlike `mcpToolName`, this is safe to persist/report: it is always one of
+   * Claude Code's own closed set of built-in tool names, never a user- or
+   * org-defined string (MCP tool names keep going through `mcpToolName`
+   * above and are deliberately never mirrored here even if classify.ts also
+   * fails to recognize the specific mcp__ tool — see mcp-unknown-tool-default
+   * in @velar-dev/rules, which handles that case on its own branch).
+   */
+  originalToolName?: string
+  /**
+   * URL (WebFetch) or search query text (WebSearch) — in-memory rule-matching
+   * only, exactly like `command`/`mcpToolInputText`. Never persisted to
+   * VelarEvent, never sent to the cloud; only used so rules can detect a
+   * secret-shaped value embedded in the destination URL or query string.
+   */
+  webTargetText?: string
+  /** True when the hook payload's `agent_id`/`agent_type` fields were present — i.e. this operation was issued by a Task-tool subagent, not the top-level session. */
+  isSubagent?: boolean
+  /** Raw `agent_type` from the hook payload (e.g. `general-purpose`, or a user-defined subagent name) — in-memory only. Never persisted/sent raw; see subagentTypeHash on ActionEnvelope for the cloud-safe form. */
+  agentType?: string
 }
 
 export interface RuleMatch {
@@ -55,6 +96,10 @@ export interface VelarEvent {
   agentName: string
   operationType: OperationType
   fileBasename?: string
+  /** Only ever set when operationType is 'unclassified' — always one of Claude Code's own built-in tool names, never an MCP/user-defined string. See NormalizedOperation.originalToolName. */
+  unclassifiedToolName?: string
+  /** True when this operation was issued by a Task-tool subagent rather than the top-level session. The subagent's own type/name is never persisted, even locally — see ActionEnvelope.subagentTypeHash for the cloud-safe form. */
+  isSubagent?: boolean
   matchedRuleId: string
   riskLevel: RiskLevel
   decision: Decision

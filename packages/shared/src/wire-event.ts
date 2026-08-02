@@ -18,7 +18,7 @@ import { z } from 'zod'
 
 export const WIRE_SCHEMA_VERSION = 1 as const
 
-export const wireOperationTypeSchema = z.enum(['file_read', 'file_write', 'bash', 'git', 'deploy'])
+export const wireOperationTypeSchema = z.enum(['file_read', 'file_write', 'bash', 'git', 'deploy', 'mcp_tool_call', 'unclassified'])
 export const wireRiskLevelSchema = z.enum(['allow', 'warn', 'critical'])
 export const wireDecisionSchema = z.enum(['allowed', 'blocked', 'approved', 'temp_allowed'])
 export const wireApprovalMethodSchema = z.enum(['slack', 'terminal', 'timeout', 'none'])

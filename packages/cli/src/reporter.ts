@@ -1,4 +1,4 @@
-import type { VelarWireEvent } from '@velar-dev/shared'
+import type { ActionEnvelope } from '@velar-dev/shared'
 import { appendToQueue, readQueue, removeFromQueue } from './queue'
 
 export interface ReporterConfig {
@@ -11,7 +11,7 @@ export type FetchFn = typeof fetch
 const SEND_TIMEOUT_MS = 1500
 
 /** One bounded-timeout attempt to send a single event. Never throws. */
-export async function sendEvent(config: ReporterConfig, event: VelarWireEvent, fetchImpl: FetchFn = fetch): Promise<boolean> {
+export async function sendEvent(config: ReporterConfig, event: ActionEnvelope, fetchImpl: FetchFn = fetch): Promise<boolean> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS)
   try {
@@ -42,7 +42,7 @@ export async function sendEvent(config: ReporterConfig, event: VelarWireEvent, f
 export async function reportEvent(
   velarDir: string,
   config: ReporterConfig | null,
-  event: VelarWireEvent,
+  event: ActionEnvelope,
   fetchImpl: FetchFn = fetch,
   warn: (msg: string) => void = () => {},
 ): Promise<void> {
@@ -65,7 +65,7 @@ export async function flushQueue(
   for (const item of queue) {
     const ok = await sendEvent(config, item, fetchImpl)
     if (!ok) break
-    removeFromQueue(velarDir, item.eventId)
+    removeFromQueue(velarDir, item.actionId)
     sent += 1
   }
   return { sent, remaining: readQueue(velarDir).length }

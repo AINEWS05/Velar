@@ -1,7 +1,7 @@
 {
   "name": "@velar-dev/cli",
-  "version": "0.2.0",
-  "description": "Pre-execution approval for AI coding agents (Claude Code, Codex, Cursor) — blocks dangerous operations before they run. Sees nothing else.",
+  "version": "0.3.0",
+  "description": "Pre-execution approval for AI coding agents (Claude Code today; Codex and Cursor planned) — blocks dangerous operations before they run. Sees nothing else.",
   "license": "MIT",
   "author": "Velar",
   "homepage": "https://github.com/AINEWS05/Velar#readme",
@@ -32,6 +32,7 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "bin": {
@@ -42,7 +43,8 @@
   "scripts": {
     "typecheck": "tsc --build",
     "build": "tsc --build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "gen:support-table": "node scripts/gen-support-table.mjs"
   },
   "dependencies": {
     "@velar-dev/rules": "workspace:*",
@@ -55,5 +57,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "velar": {
+    "securityAdvisory": "0.3.0 fixes a silent default-allow gap: any tool call classify.ts couldn't recognize (this affected WebFetch/WebSearch, and would affect any future built-in tool Claude Code adds) previously passed through unmonitored. It also adds velar-self-protection, a critical-risk rule blocking writes to Velar's own hook config and vendored code. Existing installs stay on the vendored version from their last `velar init` until it's re-run — see `velar doctor` for an upgrade check. Upgrade: npx @velar-dev/cli@latest init"
   }
 }
