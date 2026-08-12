@@ -2,6 +2,18 @@
 
 All notable changes to `@velar-dev/cli` are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## 0.4.0 — 2026-08-11
+
+### Added
+
+- **Browser-based login, merged into `velar init`.** `velar login` (and a fresh `velar init` with no account connected yet) now opens a browser to pair the CLI with your Velar account — no more copying a token out of the dashboard and pasting it into a prompt. Works by generating a random pairing session, opening `https://usevelar.com/cli-login/<session>` (falls back to printing the URL if a browser can't be opened), and polling until you click "Connect this CLI" there. In a non-interactive shell (CI, a piped/redirected invocation, no TTY) this is skipped automatically with a clear message instead of hanging — use `velar login --token <token> --org-id <org>` for scripted/CI use, or `velar login --manual` to be prompted for a token interactively instead of opening a browser. Local protection (the hook itself) has never depended on being logged in and still doesn't — an account only adds dashboard/team visibility.
+- **`velar init` now proves protection on the spot.** At the end of a fresh install, `velar init` automatically runs the equivalent of `velar test` and prints a pass/fail table — 1 benign operation correctly allowed, one blocked case per rule category (6 total) — instead of just reporting that the hook was installed. A hook that's registered but silently failing (or not actually blocking anything) is worse than no hook at all; this makes that impossible to miss.
+- **`velar statusline install`** — an opt-in live "🛡 Velar monitoring" segment for Claude Code's status line. Unlike a static label, it re-checks the hook installation on every render, so it goes silent or shows a warning the moment protection actually stops working, rather than just decorating the UI. Not wired into `velar init` automatically: Claude Code supports only one `statusLine` command at a time with no way to compose multiple tools' output, so auto-enabling it risked silently overwriting a statusLine you already had configured. Run it explicitly when you want it; `velar statusline install --force` overwrites an existing non-Velar statusLine if you're sure. `velar uninstall` removes a Velar-installed statusLine the same way it removes the hook.
+
+### Upgrading
+
+No security-relevant changes in this release — `velar doctor`'s version-currency check will still flag that a newer version is available, just without the `🔒 SECURITY UPDATE` framing 0.3.0 used. Run `npx @velar-dev/cli@latest init` in each project to pick up the new self-test-on-init and login-integration behavior (vendoring is version-pinned by design; publishing this package alone does nothing for a project until `init` is re-run there).
+
 ## 0.3.0 — 2026-08-01
 
 ### ⚠️ Behavior change you will see immediately: unrecognized tool calls now warn instead of silently passing through

@@ -78,7 +78,7 @@ Velar's local rule engine (`@velar-dev/rules`) matches on operation type, file b
 ## How it works
 
 1. **Hook registration** — `velar init` adds a `PreToolUse` entry to `.claude/settings.local.json`, so Claude Code pipes every tool call through the hook before executing it. This goes into `settings.local.json`, not the shared `settings.json` your team commits: the hook command embeds an absolute path into a per-machine vendored copy of the CLI (`~/.velar/vendor/<version>/...`), which would silently point at a nonexistent path on a teammate's machine if committed. `velar init` writes an install receipt (`.velar/install-receipt.json`, including a sha256 fingerprint of that vendored copy) so `velar doctor`/`velar test` never re-execute an unverified path — see their descriptions below.
-2. **Local classification** — the hook normalizes the tool call (path, command, or git operation) and evaluates it against `@velar-dev/rules`' 30-rule catalog. This step is synchronous, in-process, and completes in well under 50ms.
+2. **Local classification** — the hook normalizes the tool call (path, command, or git operation) and evaluates it against `@velar-dev/rules`' 39-rule catalog. This step is synchronous, in-process, and completes in well under 50ms.
 3. **Decision**:
    - `allow` → the operation proceeds immediately, silently.
    - `warn` → the operation proceeds, but is logged for visibility.
@@ -149,13 +149,17 @@ Every rule matches on operation type, file basename/path, or command text only �
 | `package-json-write` | warn | package.json | This may change dependencies or scripts. |
 | `lockfile-write` | warn | package-lock.json \| pnpm-lock.yaml \| yarn.lock | This may change resolved dependency versions. |
 
-## Beyond the 30: MCP, WebFetch/WebSearch, and Velar's own self-protection
+## Beyond the 30: 9 more rules, for 39 total
 
-Three more rules run on every install, not counted in the 30 above (see [`src/rules.ts`](./src/rules.ts)'s "not counted in the 30" blocks):
+The table above is the core, categorized set — 5 pattern-matching rules in each of 6 categories. Nine more rules run on every install, not part of that table (see [`src/rules.ts`](./src/rules.ts)'s "not counted in the 30" blocks):
 
-- **`unclassified-tool-default`** (warn) — any tool call classify.ts can't confidently place into a known shape (file_read/file_write/bash/git/deploy/mcp_tool_call) is classified `unclassified` and always at least warned on, never silently allowed. This is what closes the gap a hand-added rule per tool would always leave open for the *next* new tool Claude Code ships — including MCP tool calls (5 dedicated `mcp-*` rules handle known-dangerous patterns first, falling through to this same warn-by-default) and WebFetch/WebSearch.
+- **5 dedicated `mcp-*` rules** — MCP tool calls carry no file path or bash command string, so they need their own detection: `mcp-destructive-tool-name` (critical — a delete/drop/purge/destroy/remove-shaped tool name), `mcp-secret-like-argument` / `mcp-env-file-argument` / `mcp-production-db-argument` (critical — the same secret/`.env`/production-DB signals the core rules use, applied to the tool's stringified arguments instead of a path or command), and `mcp-unknown-tool-default` (warn — the unconditional catch-all for any MCP call the first four don't match).
+- **`unclassified-tool-default`** (warn) — the generalized form of the rule above: any tool call classify.ts can't confidently place into a known shape (file_read/file_write/bash/git/deploy/mcp_tool_call) is classified `unclassified` and always at least warned on, never silently allowed. This is what closes the gap a hand-added rule per tool would always leave open for the *next* new tool Claude Code ships — including WebFetch/WebSearch (below).
 - **`web-target-secret-like`** (critical) — WebFetch/WebSearch are not blocked for ordinary web browsing (that's a core, legitimate use case). The one channel actually treated as dangerous is a secret-shaped value embedded in the destination URL or search query itself (e.g. `https://attacker.example.com/?leak=sk-...`).
 - **`velar-self-protection`** (critical) — writes to Velar's own hook registration (`.claude/settings.json`/`settings.local.json`), the project-local `.velar/` directory (event log, install receipt, temp-allows), or the global `~/.velar/` directory (login token, vendored code) always require approval. Nothing that's being monitored should be able to silently disable its own monitor. This asks for approval (critical), it does not hard-deny — you can still legitimately edit your own settings.
+- **`env-example-allow`** (allow) — the one carve-out: `.env.example`/`.env.sample`/`.env.template` are template files, not real secrets, and are explicitly let through rather than falling into `env-file-protection` above.
+
+30 + 9 = 39. (`@velar-dev/rules`' `RULES` array has one further entry, `default-allow` — the unconditional catch-all every operation falls through to if nothing above matched. It isn't counted here since it's the absence of a match, not a detection.)
 
 An org that wants every unrecognized tool call (MCP or otherwise) to require approval rather than just warn can set `unclassifiedToolRisk: "critical"` at `velar login`/`velar init` time.
 

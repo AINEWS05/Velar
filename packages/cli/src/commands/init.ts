@@ -1,13 +1,25 @@
 import path from 'node:path'
 import { runInit } from '../settings-merge'
-import { runHookSelfTest, type HookSelfTestTarget } from '../hook-selftest'
-import { readInstallReceipt } from '../install-receipt'
 import { loadConfig, resolveApiBaseUrl } from '../config'
 import { recordLifecycleMilestone } from '../lifecycle'
+import { testCommand } from './test'
+import { loginCommand, type LoginOptions } from './login'
+import type { FetchFn } from '../reporter'
 
-export async function initCommand(cwd: string = process.cwd()): Promise<number> {
+export interface InitOptions {
+  loginOptions?: LoginOptions
+  /** Overridable for tests — never read/write the real user's ~/.velar/config.json during a test run. Also used as loginOptions.configDir's default when that isn't set separately. */
+  configDir?: string
+  /** Overridable for tests — never vendor into the real user's ~/.velar/vendor during a test run. */
+  vendorBaseDir?: string
+  vendorCliRoot?: string
+  /** Overridable for tests — avoids a real network call when a milestone gets reported to an already-connected account. */
+  fetchImpl?: FetchFn
+}
+
+export async function initCommand(cwd: string = process.cwd(), argv: string[] = [], options: InitOptions = {}): Promise<number> {
   try {
-    const result = runInit(cwd)
+    const result = runInit(cwd, { vendorBaseDir: options.vendorBaseDir, vendorCliRoot: options.vendorCliRoot })
 
     if (result.migratedFromSharedSettings) {
       console.log(`✔ Migrated the Velar hook out of the shared .claude/settings.json into ${result.settingsPath}`)
@@ -25,57 +37,53 @@ export async function initCommand(cwd: string = process.cwd()): Promise<number> 
     console.log(`✔ Local event log ready at ${path.join(result.velarDir, 'events.jsonl')}`)
     console.log(`✔ Install receipt written to ${result.receiptPath}`)
 
-    // Prove the exact command just written to settings.local.json actually
-    // runs — don't just trust that vendoring/writing the file succeeded. A
-    // hook that's present in settings but silently fails to execute is
-    // worse than no hook at all: the user believes they're protected when
-    // they aren't. Self-test against the receipt we just wrote (structured
-    // executable/args, shell:false, fingerprint-verified) rather than
-    // re-parsing the shell command string.
-    const receipt = readInstallReceipt(result.velarDir)
-    const selfTestOk = (() => {
-      if (!receipt) {
-        console.error('⚠ WARNING: could not read back the install receipt just written — skipping self-test.')
-        return false
-      }
-      const target: HookSelfTestTarget = {
-        executable: receipt.hookExecutable,
-        args: receipt.hookArgs,
-        entryPath: receipt.vendorEntryPath,
-        vendorRoot: receipt.vendorRoot,
-        expectedFingerprint: receipt.vendorEntryFingerprint,
-      }
-      const selfTest = runHookSelfTest(target, cwd)
-      if (selfTest.ok) {
-        console.log(`✔ Hook self-test passed (${selfTest.elapsedMs}ms)`)
-        return true
-      }
-      console.error('')
-      console.error('⚠ WARNING: the installed hook command did not run successfully.')
-      console.error(`  Velar is NOT currently protecting this project, despite being listed in ${result.settingsPath}.`)
-      if (selfTest.trustError) console.error(`  ${selfTest.trustError}`)
-      if (selfTest.spawnError) console.error(`  Spawn error: ${selfTest.spawnError}`)
-      if (selfTest.exitCode !== null && selfTest.exitCode !== 0) console.error(`  Exit code: ${selfTest.exitCode}`)
-      if (selfTest.stderr.trim()) console.error(`  stderr: ${selfTest.stderr.trim()}`)
-      console.error('  Run `velar doctor` for a full diagnosis before relying on Velar in this project.')
-      console.error('')
-      return false
-    })()
-
     console.log('\nVelar sees only operation metadata (tool type, file basename, command shape).')
     console.log('It never reads prompt text, file content, or secret values, and Phase 1 sends nothing to the cloud.')
 
-    if (selfTestOk) {
-      const config = loadConfig()
+    // Local blocking (below) never depends on being logged in — the rule
+    // engine runs entirely on-device. An account only adds dashboard/team
+    // visibility, so a failed or skipped pairing here must never fail the
+    // overall `init`.
+    const configDir = options.configDir
+    let config = loadConfig(configDir)
+    if (!config) {
+      console.log("\nConnecting to your Velar account (for the dashboard — local blocking works either way)...")
+      const loginExitCode = await loginCommand(argv, { configDir, ...options.loginOptions })
+      if (loginExitCode === 0) {
+        config = loadConfig(configDir)
+      } else {
+        console.log('  Skipping for now — run `velar login` any time to connect this project to your account.')
+      }
+    } else {
+      console.log(`\n✔ Already connected to Velar (org ${config.orgId}).`)
+    }
+
+    // Don't just trust that vendoring/writing the settings file succeeded —
+    // prove the exact command just written actually runs AND actually
+    // decides correctly (allows a benign op, blocks a real representative
+    // of every rule category). A hook that's present in settings but
+    // silently fails, or runs but doesn't block anything, is worse than no
+    // hook at all: the user believes they're protected when they aren't.
+    // `testCommand` re-resolves the target from what runInit() just wrote
+    // (not a value carried over in memory), so this is an honest end-to-end
+    // check, not a self-congratulatory replay.
+    console.log('\nRunning `velar test` to prove this actually protects you (not just that it\'s registered)...\n')
+    const testExitCode = await testCommand(cwd, { configDir, fetchImpl: options.fetchImpl })
+
+    if (testExitCode === 0) {
       await recordLifecycleMilestone(
         result.velarDir,
         'init_success',
         { tenantId: config?.orgId, projectName: path.basename(cwd) },
-        config ? { reporterConfig: { apiBaseUrl: resolveApiBaseUrl(config), token: config.token } } : {},
+        config
+          ? { reporterConfig: { apiBaseUrl: resolveApiBaseUrl(config), token: config.token }, fetchImpl: options.fetchImpl }
+          : {},
       )
+    } else {
+      console.error('\n  Run `velar doctor` for a full diagnosis before relying on Velar in this project.')
     }
 
-    return selfTestOk ? 0 : 1
+    return testExitCode
   } catch (err) {
     console.error(`✖ velar init failed: ${err instanceof Error ? err.message : String(err)}`)
     return 1

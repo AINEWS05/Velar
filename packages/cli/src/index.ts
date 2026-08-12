@@ -8,16 +8,22 @@ import { hookCodexPreToolUseCommand } from './commands/hook-codex-pre-tool-use'
 import { codexInitCommand } from './commands/codex-init'
 import { runClaudeCommand } from './commands/run-claude'
 import { loginCommand } from './commands/login'
+import { statuslineRenderCommand, statuslineInstallCommand } from './commands/statusline'
 
 const USAGE = [
   'Usage:',
-  '  velar login                    Save a Velar Ingest Token to ~/.velar/config.json',
-  '  velar init                     Install the Velar PreToolUse hook in .claude/settings.local.json',
+  '  velar login                    Connect this machine to your Velar account (opens a browser; no copy-paste)',
+  '                                    --token/--org-id  skip the browser (CI/scripted use)',
+  '                                    --manual          paste the token in via interactive prompts',
+  '  velar init                     Install the Velar PreToolUse hook, connect your account, and self-test',
+  '                                    (accepts the same --token/--org-id/--manual flags as `velar login`)',
   '  velar doctor                   Verify the installed hook is correctly configured and executable',
   '  velar test                     Prove the hook actually allows safe ops and blocks dangerous ones',
   '  velar uninstall                Remove everything `velar init` added to this project',
   '  velar run claude [...]         Launch Claude Code with Velar enabled',
   '  velar codex-init               Install the Velar PreToolUse hook in .codex/hooks.json (Preview — see docs)',
+  '  velar statusline install       Show a live "🛡 Velar monitoring" segment in Claude Code\'s status line',
+  '                                    --force  overwrite an existing non-Velar statusLine',
   '  velar hook pre-tool-use        (internal) Invoked by Claude Code as a PreToolUse hook',
   '  velar hook codex-pre-tool-use  (internal) Invoked by Codex CLI as a PreToolUse hook',
 ].join('\n')
@@ -29,7 +35,7 @@ export async function main(argv: string[]): Promise<number> {
     return loginCommand(argv.slice(1))
   }
   if (cmd === 'init') {
-    return initCommand()
+    return initCommand(process.cwd(), argv.slice(1))
   }
   if (cmd === 'doctor') {
     return doctorCommand()
@@ -42,6 +48,12 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (cmd === 'codex-init') {
     return codexInitCommand()
+  }
+  if (cmd === 'statusline' && sub === 'install') {
+    return statuslineInstallCommand(process.cwd(), rest)
+  }
+  if (cmd === 'statusline') {
+    return statuslineRenderCommand()
   }
   if (cmd === 'run' && sub === 'claude') {
     return runClaudeCommand(rest)

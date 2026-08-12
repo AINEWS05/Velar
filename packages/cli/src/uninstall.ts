@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { removeVelarHooks } from './settings-merge'
 import { removeVelarCodexHooks } from './codex-hooks-merge'
+import { removeVelarStatusLine } from './statusline'
 
 export interface UninstallResult {
   /** true if there was nothing to remove (idempotent no-op). */
@@ -12,6 +13,8 @@ export interface UninstallResult {
   deletedLocalSettingsFile: boolean
   /** true when .codex/hooks.json had a Velar entry removed (velar codex-init was used in this project). */
   removedFromCodexHooks: boolean
+  /** true when a Velar-installed statusLine entry (from `velar statusline install`) was removed. A statusLine belonging to the user or another tool is never touched. */
+  removedStatusLine: boolean
   removedVelarDir: boolean
   /** true when .claude/ ended up completely empty afterward and was removed too (never removed if anything else is in it). */
   removedEmptyClaudeDir: boolean
@@ -112,6 +115,13 @@ export function runUninstall(cwd: string): UninstallResult {
   const local = stripVelarFromSettingsFile(localSettingsPath, backupPaths)
   const legacy = stripVelarFromSettingsFile(legacySettingsPath, backupPaths)
   const codex = stripVelarFromSettingsFile(codexHooksPath, backupPaths, removeVelarCodexHooks)
+  // Separate pass, same file (re-read from disk, reflecting whatever the
+  // hook-removal pass above just wrote): a Velar-installed statusLine
+  // (opt-in via `velar statusline install`) is unrelated to the hook entry
+  // and removed independently, so uninstalling one never depends on
+  // whether the other was ever added. If the hook pass already deleted the
+  // file entirely, fs.existsSync below is false and this is a no-op.
+  const statusLine = stripVelarFromSettingsFile(localSettingsPath, backupPaths, removeVelarStatusLine)
 
   let removedVelarDir = false
   if (fs.existsSync(velarDir)) {
@@ -136,14 +146,21 @@ export function runUninstall(cwd: string): UninstallResult {
   }
 
   const nothingToDo =
-    !local.removed && !legacy.removed && !codex.removed && !removedVelarDir && !removedEmptyClaudeDir && !removedEmptyCodexDir
+    !local.removed &&
+    !legacy.removed &&
+    !codex.removed &&
+    !statusLine.removed &&
+    !removedVelarDir &&
+    !removedEmptyClaudeDir &&
+    !removedEmptyCodexDir
 
   return {
     nothingToDo,
     removedFromLocalSettings: local.removed,
     removedFromLegacySettings: legacy.removed,
-    deletedLocalSettingsFile: local.deletedFile,
+    deletedLocalSettingsFile: local.deletedFile || statusLine.deletedFile,
     removedFromCodexHooks: codex.removed,
+    removedStatusLine: statusLine.removed,
     removedVelarDir,
     removedEmptyClaudeDir,
     removedEmptyCodexDir,

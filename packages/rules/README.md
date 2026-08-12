@@ -26,7 +26,7 @@ evaluate(operation, onlySecretsRules)
 
 ## Rule catalog
 
-30 detection rules across 6 categories (secrets, production_db, destructive_command, deploy, exfiltration, package_ci_config), plus an `.env.example` allow carve-out and a default-allow fallback. Each `Rule` carries:
+39 detection rules total: 30 core rules across 6 categories (secrets, production_db, destructive_command, deploy, exfiltration, package_ci_config), plus MCP tool-call detection, WebFetch/WebSearch's secret-in-target check, Velar's own self-protection rule, and an `.env.example` allow carve-out — see `src/rules.ts`'s top-of-file comment for the exact breakdown. Also a `default-allow` fallback (not counted in the 39, since it's the absence of a match rather than a detection). Each `Rule` carries:
 
 - `id` — stable identifier, e.g. `env-file-protection`
 - `category` — one of the 6 categories above

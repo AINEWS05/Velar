@@ -31,6 +31,9 @@ export async function uninstallCommand(cwd: string = process.cwd()): Promise<num
     if (result.removedFromLegacySettings) {
       console.log('✔ Removed a stale Velar hook entry from the legacy .claude/settings.json.')
     }
+    if (result.removedStatusLine) {
+      console.log('✔ Removed Velar\'s statusLine entry.')
+    }
     if (result.removedVelarDir) {
       console.log('✔ Removed .velar/ (event log, install receipt, temporary allows).')
     }

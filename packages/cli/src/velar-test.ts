@@ -1,4 +1,10 @@
-import { runHookSelfTest, runHookCriticalBlockTest, type HookSelfTestResult, type HookSelfTestTarget } from './hook-selftest'
+import {
+  runHookSelfTest,
+  runHookCriticalBlockTest,
+  CATEGORY_BLOCK_PAYLOADS,
+  type HookSelfTestResult,
+  type HookSelfTestTarget,
+} from './hook-selftest'
 import { resolveHookTarget } from './hook-target'
 
 export interface VelarTestCheck {
@@ -12,24 +18,36 @@ export interface VelarTestResult {
   checks: VelarTestCheck[]
 }
 
+/** One block-case per @velar-dev/rules category — order matches rules.ts's own category ordering. */
+const BLOCK_CATEGORIES = [
+  'secrets',
+  'production_db',
+  'destructive_command',
+  'deploy',
+  'exfiltration',
+  'package_ci_config',
+] as const
+
 /**
- * `velar test` — proves the installed hook does its actual job: an allowed
- * operation passes through, AND a critical-risk operation (reading a real
- * .env file) is actually blocked (exit code 2). `velar doctor` only proves
- * the hook *runs*; this additionally proves it *decides correctly*. This is
- * the check a nervous new user (or CI) should run right after `velar init`
- * to get an unambiguous pass/fail, and what the (future) `test_pass`
- * lifecycle event is emitted from.
+ * `velar test` — proves the installed hook does its actual job: a benign
+ * operation passes through, AND a real, representative dangerous operation
+ * from EVERY rule category is actually blocked (exit code 2) — not just one
+ * example. `velar doctor` only proves the hook *runs*; this additionally
+ * proves it *decides correctly*, across the board. This is the check a
+ * nervous new user (or CI) should run right after `velar init` to get an
+ * unambiguous pass/fail, and what the `test_pass` lifecycle event is emitted
+ * from. 7 total checks: 1 allow-case + 6 category block-cases.
  */
 export function runVelarTest(
   cwd: string,
   options: {
     allowSelfTest?: (target: HookSelfTestTarget, cwd: string) => HookSelfTestResult
-    criticalSelfTest?: (target: HookSelfTestTarget, cwd: string) => HookSelfTestResult
+    /** Third arg is the synthetic payload for the case being tested — see CATEGORY_BLOCK_PAYLOADS. */
+    blockSelfTest?: (target: HookSelfTestTarget, cwd: string, payload: string) => HookSelfTestResult
   } = {},
 ): VelarTestResult {
   const allowSelfTest = options.allowSelfTest ?? runHookSelfTest
-  const criticalSelfTest = options.criticalSelfTest ?? runHookCriticalBlockTest
+  const blockSelfTest = options.blockSelfTest ?? runHookCriticalBlockTest
 
   const { checks, target } = resolveHookTarget(cwd)
 
@@ -39,11 +57,13 @@ export function runVelarTest(
       level: 'fail',
       message: 'Skipped: no verified hook target to test. Run `velar init` first.',
     })
-    checks.push({
-      id: 'critical-block-case',
-      level: 'fail',
-      message: 'Skipped: no verified hook target to test. Run `velar init` first.',
-    })
+    for (const category of BLOCK_CATEGORIES) {
+      checks.push({
+        id: `block-${category}`,
+        level: 'fail',
+        message: 'Skipped: no verified hook target to test. Run `velar init` first.',
+      })
+    }
     return { ok: false, checks }
   }
 
@@ -64,23 +84,27 @@ export function runVelarTest(
     })
   }
 
-  const criticalResult = criticalSelfTest(target, cwd)
-  if (criticalResult.trustError) {
-    checks.push({ id: 'critical-block-case', level: 'fail', message: criticalResult.trustError })
-  } else if (criticalResult.ok) {
-    checks.push({
-      id: 'critical-block-case',
-      level: 'pass',
-      message: `A critical operation (.env.production read) is correctly blocked (exit 2, ${criticalResult.elapsedMs}ms).`,
-    })
-  } else {
-    checks.push({
-      id: 'critical-block-case',
-      level: 'fail',
-      message:
-        `A critical operation was NOT blocked as expected (exit ${criticalResult.exitCode ?? 'n/a'}). ` +
-        `Velar is NOT protecting this project against dangerous operations.`,
-    })
+  for (const category of BLOCK_CATEGORIES) {
+    const { payload, label } = CATEGORY_BLOCK_PAYLOADS[category]!
+    const id = `block-${category}`
+    const result = blockSelfTest(target, cwd, payload)
+    if (result.trustError) {
+      checks.push({ id, level: 'fail', message: result.trustError })
+    } else if (result.ok) {
+      checks.push({
+        id,
+        level: 'pass',
+        message: `${label[0]!.toUpperCase()}${label.slice(1)} is correctly blocked (exit 2, ${result.elapsedMs}ms).`,
+      })
+    } else {
+      checks.push({
+        id,
+        level: 'fail',
+        message:
+          `${label[0]!.toUpperCase()}${label.slice(1)} was NOT blocked as expected (exit ${result.exitCode ?? 'n/a'}). ` +
+          `Velar is NOT protecting this project against dangerous operations.`,
+      })
+    }
   }
 
   return { ok: checks.every((c) => c.level !== 'fail'), checks }

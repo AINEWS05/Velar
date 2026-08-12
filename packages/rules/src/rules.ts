@@ -75,8 +75,14 @@ const MCP_DESTRUCTIVE_TOOL_NAME_RE = /delete|drop|purge|destroy|remove/i
 const VELAR_SELF_PROTECTION_RE = /\.velar\b|\.claude[\\/]settings(?:\.local)?\.json\b/i
 
 /**
- * Phase 3 rule catalog — 30 detection rules across 6 categories, plus two
- * non-counted infrastructure entries (`env-example-allow`, `default-allow`).
+ * Phase 3 rule catalog — 30 core detection rules across 6 categories (5
+ * each), plus 9 more not folded into that count: the `env-example-allow`
+ * carve-out, `velar-self-protection`, 5 MCP-specific `mcp-*` rules,
+ * `web-target-secret-like`, and `unclassified-tool-default` — 39 rules
+ * total. `default-allow` (the unconditional catch-all `evaluate()` needs to
+ * never return undefined) isn't counted either way; it's the absence of a
+ * match, not a detection. See packages/cli/README.md's "Beyond the 30"
+ * section for the same breakdown written for an external reader.
  *
  * ── ORDERING IS PART OF THE SPEC, NOT AN IMPLEMENTATION DETAIL ──────────────
  * `evaluate()` (see index.ts) scans this array top-to-bottom and returns the
