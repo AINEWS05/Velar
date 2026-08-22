@@ -2,6 +2,15 @@
 
 All notable changes to `@velar-dev/cli` are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## 0.4.2 — 2026-08-22
+
+Documentation-only release, same content as 0.4.1. No code, CLI behavior, or wire-format changes.
+
+### Fixed
+
+- **0.4.1 shipped with the exact same empty-README problem it was meant to fix.** Publishing via `pnpm publish --access public` (as documented in `packages/PUBLISHING.md`) is required for this monorepo — it correctly rewrites each package's `workspace:*` dependency ranges (e.g. `@velar-dev/shared: workspace:*` → `@velar-dev/shared: 0.3.0`) into something `npm install` outside this workspace can resolve, which plain `npm publish` cannot do. But `pnpm publish` has a separate, confirmed defect: it doesn't reliably send the README content to the registry as part of a version's metadata, independent of whether the tarball itself contains a correct `README.md` (it does — verified both times via `npm pack --dry-run` and by inspecting the actual tarball contents). Re-checking the registry immediately after 0.4.1 published confirmed this empirically: `readme` came back empty again.
+- **Fixed by changing how this specific release was published**, not by changing any package content: `pnpm pack` (which correctly rewrites `workspace:*` — verified by inspecting the resulting tarball's `package.json`) generates the tarball, then plain `npm publish <tarball> --access public` pushes that exact tarball to the registry — `npm`'s own publish path reads and transmits the README correctly, where `pnpm`'s does not. `packages/PUBLISHING.md` now documents this two-step sequence as the required publish method going forward, instead of a single `pnpm publish` call.
+
 ## 0.4.1 — 2026-08-22
 
 Documentation-only release. No code, CLI behavior, or wire-format changes — safe to skip if you're not reading the README.
