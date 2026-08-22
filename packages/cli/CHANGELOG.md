@@ -2,6 +2,15 @@
 
 All notable changes to `@velar-dev/cli` are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## 0.4.1 — 2026-08-22
+
+Documentation-only release. No code, CLI behavior, or wire-format changes — safe to skip if you're not reading the README.
+
+### Fixed
+
+- **README.md now matches the current implementation.** The sends-table row for the project identifier only described it in prose ("Project pseudonym") without the actual `projectPseudonym` field name used everywhere else in that table; fixed for consistency. The phrase "zero-knowledge-contract test suite" was reader-facing copy leaking an internal test-file name into public-facing wording — reworded to "no-raw-data contract test suite" (the test file itself, `tests/zero-knowledge-contract.test.ts`, is unchanged — only the description of it changed). The "Rules (30)" section heading read as a total-rule-count claim out of context even though the very next section correctly explains 30 core + 9 special = 39; retitled to "Rules (39)" with a pointer to where the other 9 are listed. A new test (`tests/readme-rule-count.test.ts`) now derives these counts from `@velar-dev/rules`' actual `RULES` array so this can't silently drift again.
+- **0.4.0's published package had no README at all on npmjs.com** (`readme` came back empty from the registry) despite the tarball itself containing a complete `README.md` — a known `pnpm publish` defect where the readme file isn't always included in the metadata sent to the registry, independent of whether it's in the tarball. This release re-verifies the tarball contents before publishing and confirms the registry actually renders the README this time.
+
 ## 0.4.0 — 2026-08-11
 
 ### Added

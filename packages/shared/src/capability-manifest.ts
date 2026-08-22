@@ -47,30 +47,48 @@ function allUnsupported(): Record<ManifestActionType, CapabilityLevel> {
 
 /**
  * codex's capabilities were empirically verified against a real, installed
- * Codex CLI (v0.144.6, Windows, `codex exec --json`) on 2026-07-31 — not
- * inferred from docs or third-party writeups, which turned out to disagree
- * with each other on exactly these facts. See packages/cli/docs/design/
- * codex-hook-verification.md for the full methodology and raw transcripts.
+ * Codex CLI (v0.144.6, Windows) on 2026-07-31 (`codex exec --json`) and
+ * again on 2026-08-21 (the plain interactive `codex` TUI, driven headlessly
+ * via node-pty/ConPTY so the process saw a real terminal — `codex doctor`
+ * confirmed `stdin/stdout/stderr is terminal: true` under this harness) —
+ * not inferred from docs or third-party writeups, which turned out to
+ * disagree with each other on exactly these facts. See
+ * packages/cli/docs/design/codex-hook-verification.md for the full
+ * methodology and raw transcripts of both passes.
  *
  * Confirmed via a real PreToolUse hook (`.codex/hooks.json`, `exit code 2`
- * deny) run 5+ times for Bash and 2+ times for apply_patch:
- *   - file_write (apply_patch): deny is ENFORCED — the file genuinely does
- *     not get written. -> 'block'
- *   - bash: the hook fires and receives the full command, but `codex exec`
- *     runs the command anyway regardless of the hook's deny decision (every
- *     tool call carries permission_mode: "bypassPermissions" in `codex
- *     exec`, irrespective of `-c approval_policy=...`). -> 'observe' only.
- *   - file_read, git, deploy: NOT independently tested — git/deploy
- *     operations route through the same `Bash` tool in Codex's own tool
- *     model, so they likely inherit bash's non-enforcement, but this was
- *     not directly verified and is deliberately left 'unsupported' rather
- *     than assumed.
- *   - Only `codex exec` (non-interactive) was tested; the interactive TUI
- *     session (the default `codex` command, what most users actually run)
- *     could not be driven headlessly in this environment and remains
- *     unverified — it may enforce Bash denial differently under its
- *     default `on-request` approval policy. Do not upgrade `bash` past
- *     'observe' without verifying that path too.
+ * deny), 5+ times for Bash and 2+ times for apply_patch in EACH mode:
+ *   - bash: the hook fires and receives the full command in both modes, but
+ *     the command runs anyway regardless of the hook's deny decision.
+ *     `codex exec` always carries `permission_mode: "bypassPermissions"`;
+ *     the interactive TUI's default (`on-request`) session instead carries
+ *     `permission_mode: "default"` — a genuinely different mode string —
+ *     yet the outcome is identical: still no enforcement. -> 'observe' only,
+ *     now cross-verified rather than assumed to generalize from exec mode.
+ *   - file_write (apply_patch): deny is enforced BY DEFAULT in both modes —
+ *     the file genuinely does not get written, confirmed across repeated
+ *     agent retries in the interactive TUI that all hit the same block.
+ *     BUT the interactive TUI surfaces the denial as a generic sandbox
+ *     failure ("Reason: command failed; retry without sandbox?") with a
+ *     human prompt whose DEFAULT-highlighted option is "1. Yes, proceed" —
+ *     selecting it (a bare Enter suffices) genuinely bypasses the hook and
+ *     the file IS written. `codex exec` has no such override path since
+ *     nothing is unattended there. -> stays 'block' (that's the enforced
+ *     default outcome), see `notes.file_write` for the override caveat.
+ *   - file_read, git, deploy: still NOT independently tested in either
+ *     mode — git/deploy operations route through the same `Bash` tool in
+ *     Codex's own tool model, so they likely inherit bash's
+ *     non-enforcement, but this remains an inference, not a test, and is
+ *     deliberately left 'unsupported' rather than assumed.
+ *
+ * Interactive-TUI-only UX, absent from `codex exec` entirely: a
+ * per-directory "Do you trust the contents of this directory?" dialog, and
+ * (separately) a "Hooks need review" dialog requiring an explicit `t`
+ * (trust all) / Enter (review hooks) / Esc (continue without trusting —
+ * hook won't run) decision before ANY hook — trusted or not — runs at all.
+ * `codex exec` has neither gate; it silently skips an unreviewed hook
+ * unless `--dangerously-bypass-hook-trust` is passed. Both dialogs' choices
+ * persist per-directory across separate `codex` launches.
  */
 export const CAPABILITY_MANIFEST: readonly AdapterCapability[] = [
   {
@@ -110,6 +128,11 @@ export const CAPABILITY_MANIFEST: readonly AdapterCapability[] = [
       deploy: 'unsupported',
       mcp_tool_call: 'unsupported',
       unclassified: 'unsupported',
+    },
+    notes: {
+      file_write:
+        '既定では拒否が有効（何度エージェントが再試行しても書き込みは発生しない、対話型TUIで実測済み）。ただしCodex自身が汎用のサンドボックス失敗として提示する「retry without sandbox?」プロンプトで、デフォルトでハイライトされた「1. Yes, proceed」を選ぶ（Enter一つで足りる）と、フックを回避してファイルが実際に書き込まれる — 2026-08-21の対話型TUI実機検証で確認済み。人間が誤ってEnterを押すだけで無効化され得るため、静かな監視ではなく能動的な確認が必要。',
+      bash: 'codex exec（permission_mode: bypassPermissions）と対話型TUIの既定on-requestセッション（permission_mode: default）の両方で、フックの拒否がコマンド実行を止めないことを実機で確認済み（2026-07-31・2026-08-21）。',
     },
   },
   {

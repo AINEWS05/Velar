@@ -25,17 +25,16 @@ The table below is generated from the Adapter Capability Manifest (`@velar-dev/s
 Get a first blocked-operation demo running in about 60 seconds.
 
 ```bash
-# 1. Install (no global install needed)
+# 1. Install and self-test (no global install needed)
 npx @velar-dev/cli init
 
-# 2. Log in with the Ingest Token from your Velar dashboard
-npx @velar-dev/cli login --token vlr_xxxxxxxx --org-id org_xxxxxxxx
-
-# 3. Run Claude Code through Velar
-npx @velar-dev/cli run claude
+# 2. Just use Claude Code as normal
+claude
 ```
 
-`init` writes a `PreToolUse` hook into `.claude/settings.local.json` for the current project (never the shared, git-committed `settings.json` — see [Hook registration](#how-it-works) below for why). From then on, every file write, bash command, and git operation Claude Code attempts is classified before it runs. Try asking it to read `.env` or run `rm -rf ~` — Velar blocks it, no dashboard required for local-only mode.
+`init` writes a `PreToolUse` hook into `.claude/settings.local.json` for the current project (never the shared, git-committed `settings.json` — see [Hook registration](#how-it-works) below for why), then runs a built-in self-test to prove it actually blocks. If you're in an interactive terminal and not already connected, `init` also opens a browser to pair the CLI with your Velar account — this is optional (local blocking works either way; it only adds dashboard/Slack visibility) and can be skipped. In a non-interactive shell (CI, no TTY) it's skipped automatically — run `velar login --token vlr_xxxxxxxx --org-id org_xxxxxxxx` later for scripted use.
+
+From then on, every file write, bash command, and git operation Claude Code attempts is classified before it runs — just launch `claude` normally, no wrapper command needed. Try asking it to read `.env` or run `rm -rf ~` — Velar blocks it, no dashboard required for local-only mode.
 
 Verify it's actually working, and that it actually blocks:
 
@@ -52,10 +51,9 @@ npx @velar-dev/cli codex-init
 
 Writes the hook into `.codex/hooks.json` for the current project. Two things to know before relying on this:
 
-- **File writes are genuinely blocked.** Codex actually enforces a hook's deny decision for `apply_patch` (its file-write tool) — a dangerous write (e.g. to a real `.env` file) does not happen.
-- **Bash commands are detected, not blocked.** Codex runs a shell command regardless of what the hook returns — confirmed by direct testing against a real Codex CLI install, not assumed from documentation (see [`docs/design/codex-hook-verification.md`](./docs/design/codex-hook-verification.md) for the full methodology). Velar still logs and reports these as critical when they match a rule, so they show up in your audit log — it just can't stop them from running today.
-- **Codex requires you to trust the hook once** before it runs at all: start a real Codex session in this project (Codex will prompt to review the new hook) or pass `--dangerously-bypass-hook-trust` yourself if you already vet hook sources that way. `codex-init` cannot grant that trust on your behalf.
-- Only `codex exec`/the Bash and `apply_patch` tools were tested; the interactive `codex` TUI session's default approval flow was not (see the verification doc).
+- **File writes are genuinely blocked — by default.** Codex enforces a hook's deny decision for `apply_patch` (its file-write tool): a dangerous write (e.g. to a real `.env` file) does not happen, confirmed across repeated agent retries in both `codex exec` and the interactive TUI. **In the interactive TUI only**, a denied write resurfaces as a generic "command failed; retry without sandbox?" prompt — approving it (a bare Enter, since it's the default-highlighted option) bypasses the hook and the file is written after all. Nothing tells you a security hook is what actually failed.
+- **Bash commands are detected, not blocked, in every mode tested.** Codex runs a shell command regardless of what the hook returns — confirmed by direct testing against a real Codex CLI install in both `codex exec` and the plain interactive `codex` TUI (its default `on-request` session), not assumed from documentation or generalized from exec mode alone (see [`docs/design/codex-hook-verification.md`](./docs/design/codex-hook-verification.md) for the full methodology and both raw transcripts). Velar still logs and reports these as critical when they match a rule, so they show up in your audit log — it just can't stop them from running today.
+- **Codex requires you to trust the hook once** before it runs at all. The interactive TUI shows this as two separate dialogs the first time: a general "do you trust this directory?" prompt, then a dedicated "Hooks need review" prompt (press `t` to trust all) — both choices persist per-directory across future launches. `codex exec` has neither dialog; pass `--dangerously-bypass-hook-trust` yourself if you already vet hook sources that way, since `codex-init` cannot grant that trust on your behalf.
 
 To remove everything `init` added:
 
@@ -69,11 +67,13 @@ velar uninstall
 |---|---|
 | Rule ID that matched (e.g. `env-file-protection`) | File contents |
 | Risk level (`allow` / `warn` / `critical`) | Prompt text |
-| Operation type (`file_read`, `bash`, `git`, `deploy`) | Full file paths (only the basename, if anything) |
+| Operation type (`file_read`, `bash`, `git`, `deploy`) | Full file paths or raw command text |
 | Decision (`allowed` / `blocked` / `approved`) | Command arguments or flags |
-| Project/agent name, approval method, latency | Environment variables or secret values |
+| `projectPseudonym` — a per-org salted hash, never the real project name — plus agent name, approval method, latency | Environment variables or secret values |
+| `canonicalizedParameterDigest` — a one-way hash of the operation's path/command, letting the dashboard notice a repeated target without ever learning what it was | The path or command itself in the clear |
+| `subagentTypeHash` (salted hash of a Task-tool subagent's type, e.g. `general-purpose`) + an `isSubagent` flag, only when the call came from a subagent | The raw subagent type/name |
 
-Velar's local rule engine (`@velar-dev/rules`) matches on operation type, file basename, and command text — entirely in-process. Only the classification result above is ever reported to the dashboard or posted to Slack. This contract is enforced by an explicit Zod `.strict()` schema at the wire boundary and is covered by the [zero-knowledge-contract test suite](./tests/zero-knowledge-contract.test.ts) — any field outside the allow-list is rejected, not silently dropped.
+Velar's local rule engine (`@velar-dev/rules`) matches on operation type, file basename, and command text — entirely in-process. Only the classification result above is ever reported to the dashboard or posted to Slack. This contract is enforced by an explicit Zod `.strict()` schema at the wire boundary and is covered by the [no-raw-data contract test suite](./tests/zero-knowledge-contract.test.ts) — any field outside the allow-list is rejected, not silently dropped.
 
 ## How it works
 
@@ -85,9 +85,9 @@ Velar's local rule engine (`@velar-dev/rules`) matches on operation type, file b
    - `critical` → the operation is blocked pending approval. If a terminal is attached, Velar prompts `[y/N]` locally. If a Slack workspace is configured, Velar posts an approval card instead and polls for a decision (approve / deny / allow for 10 minutes), with a 120-second fail-closed timeout.
 4. **Event log** — every decision (never the underlying content) is appended to a local redacted JSONL log and, if configured, reported to the Velar dashboard for team-wide visibility and audit.
 
-## Rules (30)
+## Rules (39)
 
-Every rule matches on operation type, file basename/path, or command text only — never file content or prompt text. See [`src/rules.ts`](./src/rules.ts) for the exact matching logic; `pattern` below is a human-readable summary, not always the literal regex.
+Every rule matches on operation type, file basename/path, or command text only — never file content or prompt text. See [`src/rules.ts`](./src/rules.ts) for the exact matching logic; `pattern` below is a human-readable summary, not always the literal regex. The tables below cover the core, categorized 30; the remaining 9 (MCP-specific and catch-all rules that don't fit a `pattern`/category shape) are listed in [Beyond the 30](#beyond-the-30-9-more-rules-for-39-total) further down.
 
 ### 秘密情報 / Secrets
 
